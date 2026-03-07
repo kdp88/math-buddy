@@ -8,6 +8,15 @@ import {
   SafeAreaView,
   StatusBar,
 } from 'react-native';
+import SpaceshipGame from './SpaceshipGame';
+import HauntedHouse from './HauntedHouse';
+import CockpitGame from './CockpitGame';
+import SettingsModal from './SettingsModal';
+
+const DEFAULT_SETTINGS = { ops: ['+', '-'], difficulty: 'medium', mode: 'classic' };
+
+const DIFFICULTY_MAX = { easy: 5, medium: 10, hard: 20 };
+const DIFFICULTY_MUL = { easy: 5, medium: 10, hard: 12 };
 
 const CANDY_SETS = ['🍬', '🍭', '🍫', '🍩', '🍪'];
 
@@ -68,18 +77,33 @@ function CandyDisplay({ question }) {
 }
 
 // --- Question Generator ---
-function generateQuestion() {
-  const isAddition = Math.random() > 0.4; // 60% addition, 40% subtraction
-  const a = Math.floor(Math.random() * 10) + 1;
-  const b = Math.floor(Math.random() * 10) + 1;
+function generateQuestion(settings = DEFAULT_SETTINGS) {
+  const { ops, difficulty } = settings;
+  const max = DIFFICULTY_MAX[difficulty];
+  const mul = DIFFICULTY_MUL[difficulty];
+  const op  = ops[Math.floor(Math.random() * ops.length)];
 
-  if (isAddition) {
-    return { text: `${a} + ${b}`, answer: a + b, a, b, op: '+' };
-  } else {
-    const big = Math.max(a, b);
-    const small = Math.min(a, b);
-    return { text: `${big} - ${small}`, answer: big - small, a: big, b: small, op: '-' };
+  if (op === '+') {
+    const a = Math.floor(Math.random() * max) + 1;
+    const b = Math.floor(Math.random() * max) + 1;
+    return { text: `${a} + ${b}`, answer: a + b, a, b, op };
   }
+  if (op === '-') {
+    const a = Math.floor(Math.random() * max) + 1;
+    const b = Math.floor(Math.random() * max) + 1;
+    const big = Math.max(a, b), small = Math.min(a, b);
+    return { text: `${big} - ${small}`, answer: big - small, a: big, b: small, op };
+  }
+  if (op === '×') {
+    const a = Math.floor(Math.random() * mul) + 1;
+    const b = Math.floor(Math.random() * mul) + 1;
+    return { text: `${a} × ${b}`, answer: a * b, a, b, op };
+  }
+  // op === '÷'
+  const b      = Math.floor(Math.random() * mul) + 1;
+  const answer = Math.floor(Math.random() * mul) + 1;
+  const a      = b * answer;
+  return { text: `${a} ÷ ${b}`, answer, a, b, op };
 }
 
 const CORRECT_MESSAGES = [
@@ -124,20 +148,22 @@ function NumberPad({ onPress, onDelete }) {
 
 // --- Main App ---
 export default function App() {
-  const [question, setQuestion] = useState(generateQuestion);
-  const [input, setInput] = useState('');
-  const [score, setScore] = useState(0);
-  const [streak, setStreak] = useState(0);
-  const [feedback, setFeedback] = useState(null); // null | 'correct' | 'wrong'
-  const [message, setMessage] = useState('');
-  const [answered, setAnswered] = useState(false);
+  const [settings, setSettings]               = useState(DEFAULT_SETTINGS);
+  const [settingsVisible, setSettingsVisible] = useState(true); // open on launch
+  const [question, setQuestion]               = useState(() => generateQuestion(DEFAULT_SETTINGS));
+  const [input, setInput]                     = useState('');
+  const [score, setScore]                     = useState(0);
+  const [streak, setStreak]                   = useState(0);
+  const [feedback, setFeedback]               = useState(null); // null | 'correct' | 'wrong'
+  const [message, setMessage]                 = useState('');
+  const [answered, setAnswered]               = useState(false);
 
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   function handleNumberPress(num) {
     if (answered) return;
-    if (input.length >= 2) return; // max 2 digits (answers won't exceed 20)
+    if (input.length >= 3) return; // max 3 digits (multiplication can reach 144)
     setInput(prev => prev + num);
   }
 
@@ -183,12 +209,45 @@ export default function App() {
     }
   }
 
-  function nextQuestion() {
-    setQuestion(generateQuestion());
+  function handleArcadeCorrect() {
+    const msg = CORRECT_MESSAGES[Math.floor(Math.random() * CORRECT_MESSAGES.length)];
+    setFeedback('correct');
+    setMessage(msg);
+    setScore(s => s + 1);
+    setStreak(s => s + 1);
+    Animated.sequence([
+      Animated.spring(scaleAnim, { toValue: 1.15, useNativeDriver: true }),
+      Animated.spring(scaleAnim, { toValue: 1,    useNativeDriver: true }),
+    ]).start();
+    setTimeout(() => nextQuestion(), 1500);
+  }
+
+  function handleArcadeWrong() {
+    const msg = WRONG_MESSAGES[Math.floor(Math.random() * WRONG_MESSAGES.length)];
+    setFeedback('wrong');
+    setMessage(msg);
+    setStreak(0);
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue:  10, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -10, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue:  10, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue:   0, duration: 60, useNativeDriver: true }),
+    ]).start();
+    setTimeout(() => setFeedback(null), 1200);
+  }
+
+  function nextQuestion(nextSettings) {
+    setQuestion(generateQuestion(nextSettings ?? settings));
     setInput('');
     setFeedback(null);
     setMessage('');
     setAnswered(false);
+  }
+
+  function handleSaveSettings(newSettings) {
+    setSettings(newSettings);
+    nextQuestion(newSettings);
+    setStreak(0);
   }
 
   const bgColor =
@@ -211,7 +270,21 @@ export default function App() {
             <Text style={styles.streakText}>🔥 {streak} streak!</Text>
           </View>
         )}
+        <TouchableOpacity
+          style={[styles.iconBtn, styles.headerRight]}
+          onPress={() => setSettingsVisible(true)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.iconBtnTxt}>⚙️</Text>
+        </TouchableOpacity>
       </View>
+
+      <SettingsModal
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
+        settings={settings}
+        onSave={handleSaveSettings}
+      />
 
       {/* Question */}
       <Animated.View
@@ -224,32 +297,56 @@ export default function App() {
         <Text style={styles.questionText}>{question.text} = ?</Text>
       </Animated.View>
 
-      {/* Candy pieces */}
-      <CandyDisplay question={question} />
-
-      {/* Answer display */}
-      <View style={styles.answerBox}>
-        <Text style={styles.answerText}>{input || ' '}</Text>
-      </View>
-
       {/* Feedback message */}
       <View style={styles.feedbackBox}>
         {feedback === 'correct' && <Text style={styles.correctMsg}>{message}</Text>}
         {feedback === 'wrong'   && <Text style={styles.wrongMsg}>{message}</Text>}
       </View>
 
-      {/* Number pad */}
-      <NumberPad onPress={handleNumberPress} onDelete={handleDelete} />
+      {settings.mode === 'classic' ? (
+        <>
+          {/* Candy pieces — only for + and - */}
+          {(question.op === '+' || question.op === '-') && (
+            <CandyDisplay question={question} />
+          )}
 
-      {/* Check button */}
-      <TouchableOpacity
-        style={[styles.checkBtn, input === '' && styles.checkBtnDisabled]}
-        onPress={handleCheck}
-        activeOpacity={0.8}
-        disabled={input === '' || answered}
-      >
-        <Text style={styles.checkBtnText}>Check Answer</Text>
-      </TouchableOpacity>
+          {/* Answer display */}
+          <View style={styles.answerBox}>
+            <Text style={styles.answerText}>{input || ' '}</Text>
+          </View>
+
+          {/* Number pad */}
+          <NumberPad onPress={handleNumberPress} onDelete={handleDelete} />
+
+          {/* Check button */}
+          <TouchableOpacity
+            style={[styles.checkBtn, input === '' && styles.checkBtnDisabled]}
+            onPress={handleCheck}
+            activeOpacity={0.8}
+            disabled={input === '' || answered}
+          >
+            <Text style={styles.checkBtnText}>Check Answer</Text>
+          </TouchableOpacity>
+        </>
+      ) : settings.mode === 'spaceship' ? (
+        <SpaceshipGame
+          question={question}
+          onCorrect={handleArcadeCorrect}
+          onWrong={handleArcadeWrong}
+        />
+      ) : settings.mode === 'cockpit' ? (
+        <CockpitGame
+          question={question}
+          onCorrect={handleArcadeCorrect}
+          onWrong={handleArcadeWrong}
+        />
+      ) : (
+        <HauntedHouse
+          question={question}
+          onCorrect={handleArcadeCorrect}
+          onWrong={handleArcadeWrong}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -287,6 +384,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   streakText: { fontSize: 18, fontWeight: '600', color: '#c85000' },
+  headerRight: {
+    marginLeft: 'auto',
+  },
+  iconBtn: {
+    backgroundColor: '#f0f0f0',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  iconBtnTxt: { fontSize: 20 },
 
   questionBox: {
     alignItems: 'center',
