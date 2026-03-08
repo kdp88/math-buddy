@@ -41,6 +41,14 @@ const GAME_MODES = [
     color: '#b45309',
     bg:    '#fef3c7',
   },
+  {
+    key:   'maze',
+    icon:  '🌀',
+    label: 'The Maze',
+    desc:  'Navigate the maze and reach the correct answer',
+    color: '#0f766e',
+    bg:    '#ccfbf1',
+  },
 ];
 
 const OPS = [

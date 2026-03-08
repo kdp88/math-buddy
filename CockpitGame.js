@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   Animated,
+  ImageBackground,
   StyleSheet,
   Dimensions,
 } from 'react-native';
@@ -19,25 +19,11 @@ const SPACE_H   = TOTAL_H - COCKPIT_H;
 
 const TARGET_R   = 32;   // target bubble radius
 const CROSS_SZ   = 54;   // crosshair visual diameter
-const LOCK_DIST  = TARGET_R + 20;  // px from target center for lock/hit
-const CROSS_SPD  = 9;
 
 const NUM_T    = 4;
 const T_COLORS = ['#7c3aed', '#0891b2', '#b45309', '#be185d'];
 
-const STARS = Array.from({ length: 50 }, (_, i) => ({
-  x: ((i * 73 + 17) % 97) / 97,
-  y: ((i * 47 + 31) % 89) / 89,
-  s: 1 + (i % 3),
-  o: 0.25 + (i % 4) * 0.18,
-}));
-
-// A few slow-moving large "nebula" blobs for depth
-const NEBULAE = [
-  { x: 0.15, y: 0.2,  w: 120, h: 80,  color: 'rgba(124,58,237,0.07)' },
-  { x: 0.65, y: 0.55, w: 140, h: 90,  color: 'rgba(8,145,178,0.07)'  },
-  { x: 0.4,  y: 0.8,  w: 100, h: 60,  color: 'rgba(180,83,9,0.07)'   },
-];
+const COCKPIT_BG = require('./assets/cockpit.png');
 
 function buildTargets(answer) {
   const set = new Set([answer]);
@@ -105,11 +91,9 @@ export default function CockpitGame({ question, onCorrect, onWrong }) {
   const cTop   = useRef(Animated.subtract(cyAnim,  CROSS_SZ / 2)).current;
 
   const rafRef  = useRef(null);
-  const moveRef = useRef(null);
   const lockRef = useRef(null);
 
   useEffect(() => {
-    // Reset
     phaseRef.current = 'playing';
     const ts = buildTargets(question.answer);
     targetsRef.current = ts;
@@ -121,146 +105,101 @@ export default function CockpitGame({ question, onCorrect, onWrong }) {
     cxAnim.setValue(GAME_W / 2);
     cyAnim.setValue(SPACE_H / 2);
 
-    // Game loop — updates target positions every frame
     function loop() {
       if (phaseRef.current === 'done') return;
       targetsRef.current.forEach((t, i) => {
-        t.x += t.vx;
-        t.y += t.vy;
+        t.x += t.vx; t.y += t.vy;
         if (t.x <= TARGET_R || t.x >= GAME_W - TARGET_R) {
-          t.vx *= -1;
-          t.x = Math.max(TARGET_R, Math.min(GAME_W - TARGET_R, t.x));
+          t.vx *= -1; t.x = Math.max(TARGET_R, Math.min(GAME_W - TARGET_R, t.x));
         }
         if (t.y <= TARGET_R || t.y >= SPACE_H - TARGET_R) {
-          t.vy *= -1;
-          t.y = Math.max(TARGET_R, Math.min(SPACE_H - TARGET_R, t.y));
+          t.vy *= -1; t.y = Math.max(TARGET_R, Math.min(SPACE_H - TARGET_R, t.y));
         }
-        txAnims[i].setValue(t.x);
-        tyAnims[i].setValue(t.y);
+        txAnims[i].setValue(t.x); tyAnims[i].setValue(t.y);
       });
       rafRef.current = requestAnimationFrame(loop);
     }
     rafRef.current = requestAnimationFrame(loop);
 
-    // Lock detection at 20fps (cheap compared to 60fps game loop)
-    lockRef.current = setInterval(() => {
-      if (phaseRef.current === 'done') return;
-      const { x, y } = crossRef.current;
-      let found = -1;
-      targetsRef.current.forEach((t, i) => {
-        if (Math.hypot(t.x - x, t.y - y) < LOCK_DIST) found = i;
-      });
-      setLockedIdx(found);
-    }, 50);
-
     return () => {
       cancelAnimationFrame(rafRef.current);
       clearInterval(lockRef.current);
-      clearInterval(moveRef.current);
     };
   }, [question.text]);
 
-  function startMove(dx, dy) {
-    clearInterval(moveRef.current);
-    moveRef.current = setInterval(() => {
-      const c = crossRef.current;
-      c.x = Math.max(CROSS_SZ / 2, Math.min(GAME_W  - CROSS_SZ / 2, c.x + dx * CROSS_SPD));
-      c.y = Math.max(CROSS_SZ / 2, Math.min(SPACE_H - CROSS_SZ / 2, c.y + dy * CROSS_SPD));
-      cxAnim.setValue(c.x);
-      cyAnim.setValue(c.y);
-    }, 16);
-  }
-
-  function stopMove() { clearInterval(moveRef.current); }
-
-  function fire() {
+  // Tap on the game area → find nearest target → animate crosshair → fire
+  function handleGameTap(e) {
     if (phaseRef.current !== 'playing' || hitState) return;
-    clearInterval(moveRef.current);
+    const { locationX, locationY } = e.nativeEvent;
+    if (!locationX && !locationY) return; // guard against bad events on Android
 
-    const { x, y } = crossRef.current;
-    let hitIdx = -1;
+    // Find the nearest target (no radius threshold — always fire at nearest)
+    let hitIdx = 0, bestDist = Infinity;
     targetsRef.current.forEach((t, i) => {
-      if (Math.hypot(t.x - x, t.y - y) < LOCK_DIST) hitIdx = i;
+      const d = Math.hypot(t.x - locationX, t.y - locationY);
+      if (d < bestDist) { bestDist = d; hitIdx = i; }
     });
-    if (hitIdx === -1) return; // clean miss
 
-    const isCorrect = targetsRef.current[hitIdx].isCorrect;
-    setHitState({ idx: hitIdx, isCorrect });
+    const t = targetsRef.current[hitIdx];
 
-    if (isCorrect) {
-      phaseRef.current = 'done';
-      cancelAnimationFrame(rafRef.current);
-      setTimeout(() => onCorrect(), 900);
-    } else {
-      setTimeout(() => { setHitState(null); onWrong(); }, 800);
-    }
+    // Animate crosshair to target's current position, then fire
+    crossRef.current = { x: t.x, y: t.y };
+    Animated.parallel([
+      Animated.timing(cxAnim, { toValue: t.x, duration: 180, useNativeDriver: false }),
+      Animated.timing(cyAnim, { toValue: t.y, duration: 180, useNativeDriver: false }),
+    ]).start(() => {
+      if (phaseRef.current !== 'playing') return;
+      const isCorrect = targetsRef.current[hitIdx].isCorrect;
+      setHitState({ idx: hitIdx, isCorrect });
+      setLockedIdx(hitIdx);
+
+      if (isCorrect) {
+        phaseRef.current = 'done';
+        cancelAnimationFrame(rafRef.current);
+        setTimeout(() => onCorrect(), 900);
+      } else {
+        setTimeout(() => { setHitState(null); setLockedIdx(-1); onWrong(); }, 800);
+      }
+    });
   }
 
-  const isLocked    = lockedIdx !== -1 && !hitState;
-  const crossColor  = hitState
+  const isLocked   = lockedIdx !== -1 && !hitState;
+  const crossColor = hitState
     ? (hitState.isCorrect ? '#4ade80' : '#f87171')
     : isLocked ? '#fde047' : 'rgba(253,224,71,0.45)';
 
   return (
-    <View style={styles.container}>
-      {/* Deep space background */}
-      <View style={StyleSheet.absoluteFill}>
-        {/* Nebulae */}
-        {NEBULAE.map((n, i) => (
-          <View
-            key={i}
-            style={{
-              position:        'absolute',
-              left:            n.x * GAME_W,
-              top:             n.y * SPACE_H,
-              width:           n.w,
-              height:          n.h,
-              borderRadius:    n.h,
-              backgroundColor: n.color,
-            }}
-          />
-        ))}
-        {/* Stars */}
-        {STARS.map((s, i) => (
-          <View
-            key={i}
-            style={{
-              position:        'absolute',
-              left:            s.x * GAME_W,
-              top:             s.y * SPACE_H,
-              width:           s.s,
-              height:          s.s,
-              borderRadius:    s.s,
-              backgroundColor: '#fff',
-              opacity:         s.o,
-            }}
-          />
-        ))}
-      </View>
+    <ImageBackground
+      source={COCKPIT_BG}
+      style={styles.container}
+      imageStyle={styles.bgImage}
+      resizeMode="cover"
+    >
+      {/* Tap zone — explicit width/height, touch-down responder for Android reliability */}
+      <View
+        style={{ position: 'absolute', top: 0, left: 0, width: GAME_W, height: SPACE_H }}
+        onStartShouldSetResponder={() => true}
+        onResponderGrant={handleGameTap}
+      />
 
       {/* Drifting number targets */}
       {targets.map((t, i) => {
-        const hit     = hitState?.idx === i;
-        const locked  = lockedIdx === i && !hitState;
+        const hit    = hitState?.idx === i;
+        const locked = lockedIdx === i && !hitState;
         return (
           <Animated.View
             key={i}
+            pointerEvents="none"
             style={[
               styles.target,
-              {
-                left:            tLefts[i],
-                top:             tTops[i],
-                backgroundColor: t.color,
-              },
+              { left: tLefts[i], top: tTops[i], backgroundColor: t.color },
               locked && styles.targetLocked,
               hit && t.isCorrect  && styles.targetHitOk,
               hit && !t.isCorrect && styles.targetHitBad,
             ]}
           >
             <Text style={styles.targetNum}>{t.num}</Text>
-            {hit && (
-              <Text style={styles.hitIcon}>{t.isCorrect ? '✓' : '✗'}</Text>
-            )}
+            {hit && <Text style={styles.hitIcon}>{t.isCorrect ? '✓' : '✗'}</Text>}
           </Animated.View>
         );
       })}
@@ -270,96 +209,39 @@ export default function CockpitGame({ question, onCorrect, onWrong }) {
         style={[styles.crosshair, { left: cLeft, top: cTop }]}
         pointerEvents="none"
       >
-        {/* Horizontal arm */}
         <View style={[styles.chArm, styles.chArmH, { backgroundColor: crossColor }]} />
-        {/* Vertical arm */}
         <View style={[styles.chArm, styles.chArmV, { backgroundColor: crossColor }]} />
-        {/* Ring */}
         <View style={[styles.chRing, { borderColor: crossColor }]} />
-        {/* Center dot */}
         <View style={[styles.chDot, { backgroundColor: crossColor }]} />
       </Animated.View>
 
-      {/* Cockpit panel */}
+      {/* Cockpit panel — mission info only */}
       <View style={styles.cockpit}>
-        {/* D-pad */}
-        <View style={styles.dpad}>
-          <View style={styles.dpadRow}>
-            <TouchableOpacity
-              style={styles.dpadBtn}
-              onPressIn={() => startMove(0, -1)}
-              onPressOut={stopMove}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.dpadTxt}>▲</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.dpadRow}>
-            <TouchableOpacity
-              style={styles.dpadBtn}
-              onPressIn={() => startMove(-1, 0)}
-              onPressOut={stopMove}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.dpadTxt}>◄</Text>
-            </TouchableOpacity>
-            <View style={styles.dpadGap} />
-            <TouchableOpacity
-              style={styles.dpadBtn}
-              onPressIn={() => startMove(1, 0)}
-              onPressOut={stopMove}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.dpadTxt}>►</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.dpadRow}>
-            <TouchableOpacity
-              style={styles.dpadBtn}
-              onPressIn={() => startMove(0, 1)}
-              onPressOut={stopMove}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.dpadTxt}>▼</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Mission screen */}
         <View style={styles.screen}>
           <Text style={styles.screenLabel}>MISSION</Text>
           <Text style={styles.screenQ}>{question.text} = ?</Text>
           <Text style={styles.screenHint}>
-            {isLocked ? '🔒 LOCKED' : '— AIM —'}
+            {hitState ? (hitState.isCorrect ? '✓ HIT' : '✗ MISS') : '👆 TAP THE ANSWER'}
           </Text>
         </View>
-
-        {/* Fire button */}
-        <TouchableOpacity
-          style={[styles.fireBtn, !!hitState && styles.fireBtnCooldown]}
-          onPress={fire}
-          disabled={!!hitState}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.fireBtnTxt}>FIRE</Text>
-        </TouchableOpacity>
       </View>
-    </View>
+    </ImageBackground>
   );
 }
 
-const DPAD_BTN = 36;
 
 const styles = StyleSheet.create({
   container: {
-    width:           GAME_W,
-    height:          TOTAL_H,
-    borderRadius:    20,
-    overflow:        'hidden',
-    backgroundColor: '#00000f',
-    borderWidth:     1.5,
-    borderColor:     '#1e3a5f',
-    marginVertical:  8,
+    width:          GAME_W,
+    height:         TOTAL_H,
+    borderRadius:   20,
+    overflow:       'hidden',
+    borderWidth:    1.5,
+    borderColor:    '#1e3a5f',
+    marginVertical: 8,
+  },
+  bgImage: {
+    borderRadius: 20,
   },
 
   // Targets
@@ -442,41 +324,13 @@ const styles = StyleSheet.create({
     left:              0,
     right:             0,
     height:            COCKPIT_H,
-    backgroundColor:   '#080f1a',
+    backgroundColor:   'rgba(4,10,22,0.82)',
     borderTopWidth:    2,
     borderTopColor:    '#1e4976',
     flexDirection:     'row',
     alignItems:        'center',
     justifyContent:    'space-between',
     paddingHorizontal: 14,
-  },
-
-  // D-pad
-  dpad: {
-    alignItems: 'center',
-    gap:        3,
-  },
-  dpadRow: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    justifyContent: 'center',
-    gap:            3,
-  },
-  dpadBtn: {
-    width:           DPAD_BTN,
-    height:          DPAD_BTN,
-    backgroundColor: '#112233',
-    borderRadius:    8,
-    alignItems:      'center',
-    justifyContent:  'center',
-    borderWidth:     1,
-    borderColor:     '#1e4976',
-  },
-  dpadGap: { width: DPAD_BTN, height: DPAD_BTN },
-  dpadTxt: {
-    fontSize:   16,
-    color:      '#60a5fa',
-    fontWeight: '700',
   },
 
   // Mission screen
@@ -510,31 +364,4 @@ const styles = StyleSheet.create({
     fontWeight:'600',
   },
 
-  // Fire button
-  fireBtn: {
-    width:           68,
-    height:          68,
-    borderRadius:    34,
-    backgroundColor: '#dc2626',
-    alignItems:      'center',
-    justifyContent:  'center',
-    borderWidth:     3,
-    borderColor:     '#fca5a5',
-    shadowColor:     '#dc2626',
-    shadowOpacity:   0.7,
-    shadowRadius:    12,
-    elevation:       8,
-  },
-  fireBtnCooldown: {
-    backgroundColor: '#450a0a',
-    borderColor:     '#450a0a',
-    shadowOpacity:   0,
-    elevation:       0,
-  },
-  fireBtnTxt: {
-    fontSize:      14,
-    fontWeight:    '900',
-    color:         '#fff',
-    letterSpacing: 2,
-  },
 });

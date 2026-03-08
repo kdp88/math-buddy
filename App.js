@@ -11,6 +11,7 @@ import {
 import SpaceshipGame from './SpaceshipGame';
 import HauntedHouse from './HauntedHouse';
 import CockpitGame from './CockpitGame';
+import MazeGame from './MazeGame';
 import SettingsModal from './SettingsModal';
 
 const DEFAULT_SETTINGS = { ops: ['+', '-'], difficulty: 'medium', mode: 'classic' };
@@ -336,6 +337,12 @@ export default function App() {
         />
       ) : settings.mode === 'cockpit' ? (
         <CockpitGame
+          question={question}
+          onCorrect={handleArcadeCorrect}
+          onWrong={handleArcadeWrong}
+        />
+      ) : settings.mode === 'maze' ? (
+        <MazeGame
           question={question}
           onCorrect={handleArcadeCorrect}
           onWrong={handleArcadeWrong}
