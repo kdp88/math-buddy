@@ -1,281 +1,306 @@
 import { useState, useRef, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  Animated,
-  StyleSheet,
-  Dimensions,
-} from 'react-native';
+import { View, Text, StyleSheet, Dimensions, Animated } from 'react-native';
+import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
+import * as THREE from 'three';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const GAME_W = SCREEN_W - 32;
+const GAME_H = Math.min(Math.round(SCREEN_H * 0.54), SCREEN_H - 260);
 
-const GAME_W  = SCREEN_W - 32;
-const GAME_H  = Math.round(SCREEN_H * 0.54); // taller — no control bar
-const TOTAL_H = GAME_H;
+const NUM_GHOSTS = 4;
 
-const DOOR_W   = 62;
-const DOOR_H   = 155;
-const DOOR_TOP = 36;
-const FLOOR_Y  = DOOR_TOP + DOOR_H + 2;
+const GHOST_XS      = [-2.2, -0.75, 0.75, 2.2];
+const GHOST_START_Z = [-3.8, -4.4, -4.0, -3.6];
+const GHOST_SPEEDS  = [0.38, 0.44, 0.36, 0.41];
 
-const PLAYER_SIZE   = 36;
-const PLAYER_BOTTOM = 18; // from container bottom
+// ─── game logic ───────────────────────────────────────────────────────────────
 
-const NUM_DOORS = 4;
-const SLOT      = GAME_W / NUM_DOORS;
-
-const STARS = Array.from({ length: 18 }, (_, i) => ({
-  left:    ((i * 73 + 17) % 97) / 97,
-  top:     ((i * 47 + 31) % 89) / 89 * (FLOOR_Y - 8),
-  size:    1 + (i % 3),
-  opacity: 0.3 + (i % 4) * 0.15,
-}));
-
-const DECOS = [
-  { emoji: '🌕', top: 6,  left: GAME_W - 48 },
-  { emoji: '🕷️', top: 10, left: 6            },
-  { emoji: '🦇', top: DOOR_TOP - 20, left: Math.round(GAME_W * 0.3) },
-  { emoji: '🎃', top: FLOOR_Y,       left: Math.round(GAME_W * 0.05) },
-  { emoji: '🎃', top: FLOOR_Y,       left: Math.round(GAME_W * 0.87) },
-];
-
-function buildDoors(correctAnswer) {
-  const set = new Set([correctAnswer]);
+function buildGhosts(answer) {
+  const set = new Set([answer]);
   let tries = 0;
-  while (set.size < NUM_DOORS && tries < 60) {
-    const val = correctAnswer + ((Math.floor(Math.random() * 8) - 4) || 1);
-    if (val >= 0) set.add(val);
+  while (set.size < NUM_GHOSTS && tries < 60) {
+    const v = answer + ((Math.floor(Math.random() * 8) - 4) || 1);
+    if (v >= 0) set.add(v);
     tries++;
   }
-  for (let i = 1; set.size < NUM_DOORS; i++) {
-    if (!set.has(correctAnswer + i))                              set.add(correctAnswer + i);
-    else if (correctAnswer - i >= 0 && !set.has(correctAnswer - i)) set.add(correctAnswer - i);
+  for (let i = 1; set.size < NUM_GHOSTS; i++) {
+    if (!set.has(answer + i))                            set.add(answer + i);
+    else if (answer - i >= 0 && !set.has(answer - i))   set.add(answer - i);
   }
   const arr = [...set];
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
-  return arr.map((num, i) => ({
-    num,
-    isCorrect: num === correctAnswer,
-    cx:    SLOT * i + SLOT / 2,
-    state: 'closed',
-  }));
+  return arr.map(num => ({ num, isCorrect: num === answer }));
 }
 
-export default function HauntedHouse({ question, onCorrect, onWrong }) {
-  const [doors,   setDoors]   = useState(() => buildDoors(question.answer));
-  const [flipX,   setFlipX]   = useState(1);
-  const [done,    setDone]    = useState(false);
+// ─── Projects ghost 3D positions → 2D screen coords each frame ────────────────
 
-  const playerXAnim = useRef(new Animated.Value(GAME_W / 2)).current;
-  const playerXRef  = useRef(GAME_W / 2);
-  const doorAnims   = useRef(Array.from({ length: NUM_DOORS }, () => new Animated.Value(0))).current;
-  const ghostAnims  = useRef(Array.from({ length: NUM_DOORS }, () => new Animated.Value(0))).current;
-  const doneRef     = useRef(false);
-  const walkingRef  = useRef(false);
+const _vec = new THREE.Vector3();
+
+function LabelProjector({ groupRefs, labelAnims }) {
+  const { camera, size } = useThree();
+  useFrame(() => {
+    groupRefs.forEach((ref, i) => {
+      if (!ref.current) return;
+      _vec.copy(ref.current.position);
+      _vec.project(camera);
+      // _vec.x/_vec.y are NDC [-1,1]; convert to canvas pixels
+      labelAnims[i].x.setValue((_vec.x  *  0.5 + 0.5) * size.width  - 18);
+      labelAnims[i].y.setValue((-_vec.y *  0.5 + 0.5) * size.height - 18);
+    });
+  });
+  return null;
+}
+
+// ─── Flickering torch ─────────────────────────────────────────────────────────
+
+function Torch({ position }) {
+  const flameRef = useRef();
+  useFrame(({ clock }) => {
+    if (!flameRef.current) return;
+    const t = clock.elapsedTime;
+    flameRef.current.scale.setScalar(
+      0.88 + Math.sin(t * 13) * 0.13 + Math.sin(t * 7.4) * 0.07,
+    );
+  });
+  return (
+    <group position={position}>
+      <mesh>
+        <cylinderGeometry args={[0.04, 0.04, 0.3, 6]} />
+        <meshStandardMaterial color="#5c3a1e" roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 0.22, 0]}>
+        <cylinderGeometry args={[0.07, 0.05, 0.09, 8]} />
+        <meshStandardMaterial color="#7c5a2e" metalness={0.2} />
+      </mesh>
+      <mesh ref={flameRef} position={[0, 0.33, 0]}>
+        <sphereGeometry args={[0.11, 8, 8]} />
+        <meshStandardMaterial
+          color="#fbbf24"
+          emissive="#f97316"
+          emissiveIntensity={4.0}
+          transparent opacity={0.92}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+// ─── Floating ghost ───────────────────────────────────────────────────────────
+
+function FloatingGhost({ index, ghost, hitResult, onTap, groupRef }) {
+  const bodyRef  = useRef();
+  const zRef     = useRef(GHOST_START_Z[index]);
+  const phaseRef = useRef(index * 1.3);
 
   useEffect(() => {
-    const id = playerXAnim.addListener(({ value }) => { playerXRef.current = value; });
-    return () => playerXAnim.removeListener(id);
-  }, []);
+    zRef.current = GHOST_START_Z[index];
+    if (groupRef.current) {
+      groupRef.current.position.set(GHOST_XS[index], 0, GHOST_START_Z[index]);
+      groupRef.current.scale.setScalar(1);
+    }
+    if (bodyRef.current) {
+      bodyRef.current.material.opacity = 0.88;
+    }
+  }, [ghost.num]);
 
-  useEffect(() => {
-    setDoors(buildDoors(question.answer));
-    playerXAnim.setValue(GAME_W / 2);
-    playerXRef.current = GAME_W / 2;
-    setFlipX(1);
-    setDone(false);
-    doneRef.current  = false;
-    walkingRef.current = false;
-    doorAnims.forEach(a => a.setValue(0));
-    ghostAnims.forEach(a => a.setValue(0));
-  }, [question.text]);
+  useFrame(({ clock }, delta) => {
+    if (!groupRef.current || !bodyRef.current) return;
+    const t = clock.elapsedTime;
 
-  function tapDoor(idx) {
-    if (doneRef.current || walkingRef.current) return;
+    if (hitResult === 'correct') {
+      const s = groupRef.current.scale.x;
+      if (s < 4) groupRef.current.scale.setScalar(s + delta * 2);
+      const op = bodyRef.current.material.opacity;
+      if (op > 0) bodyRef.current.material.opacity = Math.max(0, op - delta * 3);
+      return;
+    }
 
-    const door   = doors[idx];
-    if (door.state === 'open') return;
+    zRef.current = Math.min(zRef.current + GHOST_SPEEDS[index] * delta, 0.2);
+    const sway = Math.sin(t * 0.55 + phaseRef.current * 1.4) * 0.18;
+    const bob  = Math.sin(t * 1.5  + phaseRef.current)       * 0.16;
+    groupRef.current.position.set(GHOST_XS[index] + sway, bob, zRef.current);
+  });
 
-    const targetCx = door.cx;
-    const dist     = Math.abs(targetCx - playerXRef.current);
-
-    // Face the right direction
-    setFlipX(targetCx >= playerXRef.current ? 1 : -1);
-
-    walkingRef.current = true;
-
-    Animated.timing(playerXAnim, {
-      toValue:         targetCx,
-      duration:        dist * 1.4 + 60,
-      useNativeDriver: false,
-    }).start(({ finished }) => {
-      walkingRef.current = false;
-      if (!finished) return;
-      knockDoor(idx);
-    });
-  }
-
-  function knockDoor(idx) {
-    if (doneRef.current) return;
-    const door = doors[idx];
-
-    Animated.timing(doorAnims[idx], {
-      toValue:         1,
-      duration:        500,
-      useNativeDriver: true,
-    }).start(() => {
-      setDoors(prev => prev.map((d, i) => i === idx ? { ...d, state: 'open' } : d));
-
-      if (door.isCorrect) {
-        doneRef.current = true;
-        setDone(true);
-        setTimeout(() => onCorrect(), 850);
-      } else {
-        ghostAnims[idx].setValue(0);
-        Animated.timing(ghostAnims[idx], {
-          toValue:         1,
-          duration:        800,
-          useNativeDriver: true,
-        }).start();
-        onWrong();
-      }
-    });
-  }
-
-  const ghostMidY = DOOR_TOP + DOOR_H / 2;
+  const isWrong   = hitResult === 'wrong';
+  const isCorrect = hitResult === 'correct';
+  const bodyColor = isCorrect ? '#4ade80' : isWrong ? '#f87171' : '#e9d5ff';
+  const emissive  = isCorrect ? '#4ade80' : isWrong ? '#ef4444' : '#c4b5fd';
+  const emissiveI = isCorrect ? 1.5       : isWrong ? 1.2       : 0.55;
 
   return (
-    <View style={styles.container}>
-      {/* Night sky */}
-      {STARS.map((s, i) => (
-        <View
+    <group ref={groupRef} position={[GHOST_XS[index], 0, GHOST_START_Z[index]]}>
+      <mesh ref={bodyRef} scale={[1, 1.3, 1]} onClick={onTap}>
+        <sphereGeometry args={[0.38, 20, 20]} />
+        <meshStandardMaterial
+          color={bodyColor}
+          emissive={emissive}
+          emissiveIntensity={emissiveI}
+          transparent
+          opacity={0.88}
+        />
+      </mesh>
+      <mesh position={[-0.13, 0.1, 0.34]}>
+        <sphereGeometry args={[0.07, 8, 8]} />
+        <meshStandardMaterial color="#1a0a2e" />
+      </mesh>
+      <mesh position={[0.13, 0.1, 0.34]}>
+        <sphereGeometry args={[0.07, 8, 8]} />
+        <meshStandardMaterial color="#1a0a2e" />
+      </mesh>
+    </group>
+  );
+}
+
+// ─── Corridor scene ───────────────────────────────────────────────────────────
+
+function Corridor() {
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.4, 0]}>
+        <planeGeometry args={[10, 14]} />
+        <meshStandardMaterial color="#2e1a44" roughness={0.97} />
+      </mesh>
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 2.8, 0]}>
+        <planeGeometry args={[10, 14]} />
+        <meshStandardMaterial color="#160830" roughness={1} />
+      </mesh>
+      <mesh rotation={[0, Math.PI / 2, 0]} position={[-4.4, 0.7, 0]}>
+        <planeGeometry args={[14, 4.2]} />
+        <meshStandardMaterial color="#3b1a5e" roughness={0.9} />
+      </mesh>
+      <mesh rotation={[0, -Math.PI / 2, 0]} position={[4.4, 0.7, 0]}>
+        <planeGeometry args={[14, 4.2]} />
+        <meshStandardMaterial color="#3b1a5e" roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 0.7, -5.0]}>
+        <planeGeometry args={[10, 4.2]} />
+        <meshStandardMaterial color="#2d1048" roughness={0.88} />
+      </mesh>
+      {[-1, 1, 3].map((bz, i) => (
+        <mesh key={i} position={[0, 2.72, bz]}>
+          <boxGeometry args={[10, 0.18, 0.26]} />
+          <meshStandardMaterial color="#301908" roughness={0.9} />
+        </mesh>
+      ))}
+      <mesh position={[-4.38, -1.28, 0]}>
+        <boxGeometry args={[0.08, 0.16, 14]} />
+        <meshStandardMaterial color="#301908" />
+      </mesh>
+      <mesh position={[4.38, -1.28, 0]}>
+        <boxGeometry args={[0.08, 0.16, 14]} />
+        <meshStandardMaterial color="#3e1f0a" />
+      </mesh>
+    </>
+  );
+}
+
+function Scene({ ghosts, onTap, hitResults, groupRefs, labelAnims }) {
+  return (
+    <>
+      <color attach="background" args={['#100520']} />
+      <fog attach="fog" args={['#100520', 9, 16]} />
+
+      <ambientLight intensity={0.9} color="#c084fc" />
+      <pointLight position={[0, 3, 2]}   color="#ffffff" intensity={3.5} distance={12} />
+      <pointLight position={[-4, 1.4, -1.8]} color="#f97316" intensity={3.0} distance={8} />
+      <pointLight position={[ 4, 1.4, -1.8]} color="#f97316" intensity={3.0} distance={8} />
+      <pointLight position={[-4, 1.4, -3.5]} color="#f97316" intensity={2.5} distance={7} />
+      <pointLight position={[ 4, 1.4, -3.5]} color="#f97316" intensity={2.5} distance={7} />
+      <pointLight position={[0, 1.5, -3.5]} color="#a855f7" intensity={2.0} distance={6} />
+
+      <Corridor />
+
+      <Torch position={[-4.2, 1.2, -1.8]} />
+      <Torch position={[ 4.2, 1.2, -1.8]} />
+      <Torch position={[-4.2, 1.2, -3.5]} />
+      <Torch position={[ 4.2, 1.2, -3.5]} />
+
+      {ghosts.map((ghost, i) => (
+        <FloatingGhost
           key={i}
-          style={{
-            position:        'absolute',
-            left:            s.left * GAME_W,
-            top:             s.top,
-            width:           s.size,
-            height:          s.size,
-            borderRadius:    s.size,
-            backgroundColor: '#fff',
-            opacity:         s.opacity,
-          }}
+          index={i}
+          ghost={ghost}
+          hitResult={hitResults[i]}
+          onTap={() => onTap(i)}
+          groupRef={groupRefs[i]}
         />
       ))}
 
-      {/* Decorations */}
-      {DECOS.map((d, i) => (
-        <Text key={i} style={[styles.deco, { top: d.top, left: d.left }]}>
-          {d.emoji}
-        </Text>
-      ))}
+      <LabelProjector groupRefs={groupRefs} labelAnims={labelAnims} />
+    </>
+  );
+}
 
-      <View style={styles.wall} />
-      <View style={[styles.floor, { top: FLOOR_Y }]} />
+// ─── Main component ────────────────────────────────────────────────────────────
 
-      {/* Doors — tappable */}
-      {doors.map((door, i) => (
-        <TouchableOpacity
-          key={i}
-          activeOpacity={0.8}
-          onPress={() => tapDoor(i)}
-          disabled={done || door.state === 'open'}
-          style={[
-            styles.doorFrame,
-            { left: door.cx - DOOR_W / 2 - 5, top: DOOR_TOP },
-            door.state === 'closed' && !done && styles.doorFrameActive,
-          ]}
-        >
-          {/* Content revealed behind the door */}
-          <View
-            style={[
-              styles.doorBack,
-              door.state === 'open' && door.isCorrect  && styles.doorBackCorrect,
-              door.state === 'open' && !door.isCorrect && styles.doorBackWrong,
-            ]}
-          >
-            {door.state === 'open' && (
-              <>
-                <Text style={[styles.doorNum, door.isCorrect ? styles.doorNumCorrect : styles.doorNumWrong]}>
-                  {door.num}
-                </Text>
-                <Text style={styles.doorResultIcon}>{door.isCorrect ? '⭐' : '💀'}</Text>
-              </>
-            )}
-          </View>
+export default function HauntedHouse({ question, onCorrect, onWrong }) {
+  const [ghosts,     setGhosts]     = useState(() => buildGhosts(question.answer));
+  const [hitResults, setHitResults] = useState(['none', 'none', 'none', 'none']);
+  const doneRef = useRef(false);
 
-          {/* Door face — slides up */}
-          <Animated.View
-            style={[
-              styles.doorFace,
-              {
-                transform: [{
-                  translateY: doorAnims[i].interpolate({
-                    inputRange:  [0, 1],
-                    outputRange: [0, -(DOOR_H + 10)],
-                  }),
-                }],
-              },
-            ]}
-          >
-            <Text style={styles.doorKnob}>🔮</Text>
-            <Text style={styles.doorQuestion}>❓</Text>
-            <Text style={styles.doorTapHint}>tap</Text>
-          </Animated.View>
-        </TouchableOpacity>
-      ))}
+  // One ref per ghost for 3D group; one Animated.ValueXY per ghost for label position
+  const groupRefs  = useRef(Array.from({ length: NUM_GHOSTS }, () => ({ current: null }))).current;
+  const labelAnims = useRef(Array.from({ length: NUM_GHOSTS }, () => ({
+    x: new Animated.Value(0),
+    y: new Animated.Value(0),
+  }))).current;
 
-      {/* Ghost fly-outs */}
-      {doors.map((door, i) =>
-        door.state === 'open' && !door.isCorrect ? (
-          <Animated.Text
-            key={`ghost-${i}`}
-            style={{
-              position: 'absolute',
-              left:     door.cx - 14,
-              opacity:  ghostAnims[i].interpolate({
-                inputRange:  [0, 0.1, 0.8, 1],
-                outputRange: [0, 1,   1,   0],
-              }),
-              transform: [{
-                translateY: ghostAnims[i].interpolate({
-                  inputRange:  [0, 1],
-                  outputRange: [ghostMidY, ghostMidY - 85],
-                }),
-              }],
-              fontSize: 26,
-              zIndex:   20,
-            }}
-          >
-            👻
-          </Animated.Text>
-        ) : null,
-      )}
+  useEffect(() => {
+    setGhosts(buildGhosts(question.answer));
+    setHitResults(['none', 'none', 'none', 'none']);
+    doneRef.current = false;
+  }, [question.text]);
 
-      {/* Player — Animated.View owns position/flip; inner Text is static */}
-      <Animated.View
-        style={{
-          position:  'absolute',
-          bottom:    PLAYER_BOTTOM,
-          left:      0,
-          transform: [
-            { translateX: Animated.subtract(playerXAnim, PLAYER_SIZE / 2) },
-            { scaleX: flipX },
-          ],
-        }}
+  function tapGhost(idx) {
+    if (doneRef.current || hitResults[idx] !== 'none') return;
+    if (ghosts[idx].isCorrect) {
+      doneRef.current = true;
+      setHitResults(h => h.map((v, i) => i === idx ? 'correct' : v));
+      setTimeout(() => onCorrect(), 900);
+    } else {
+      setHitResults(h => h.map((v, i) => i === idx ? 'wrong' : v));
+      setTimeout(() => setHitResults(h => h.map((v, i) => i === idx ? 'none' : v)), 700);
+      onWrong();
+    }
+  }
+
+  return (
+    <View style={styles.container}>
+      <Canvas
+        camera={{ position: [0, 0.2, 4.5], fov: 80 }}
+        style={StyleSheet.absoluteFill}
+        gl={{ antialias: true }}
       >
-        <Text style={styles.player}>🧟</Text>
-      </Animated.View>
+        <Scene
+          ghosts={ghosts}
+          onTap={tapGhost}
+          hitResults={hitResults}
+          groupRefs={groupRefs}
+          labelAnims={labelAnims}
+        />
+      </Canvas>
 
-      {/* Hint */}
-      <View style={styles.hintBar}>
-        <Text style={styles.hintTxt}>
-          {done ? '✅ Correct!' : '👆 Tap a door to knock'}
-        </Text>
+      {/* RN overlay: number labels that track ghost positions via Animated */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {ghosts.map((ghost, i) => {
+          const isWrong   = hitResults[i] === 'wrong';
+          const isCorrect = hitResults[i] === 'correct';
+          const color = isCorrect ? '#4ade80' : isWrong ? '#f87171' : '#ffffff';
+          return (
+            <Animated.View
+              key={i}
+              style={[
+                styles.label,
+                { left: labelAnims[i].x, top: labelAnims[i].y },
+              ]}
+            >
+              <Text style={[styles.labelText, { color }]}>{ghost.num}</Text>
+            </Animated.View>
+          );
+        })}
       </View>
     </View>
   );
@@ -283,96 +308,26 @@ export default function HauntedHouse({ question, onCorrect, onWrong }) {
 
 const styles = StyleSheet.create({
   container: {
-    width:           GAME_W,
-    height:          TOTAL_H,
-    borderRadius:    20,
-    overflow:        'hidden',
-    backgroundColor: '#160b2c',
-    borderWidth:     1.5,
-    borderColor:     '#3d1a6e',
-    marginVertical:  8,
+    width:          GAME_W,
+    height:         GAME_H,
+    borderRadius:   20,
+    overflow:       'hidden',
+    borderWidth:    1.5,
+    borderColor:    '#3d1a6e',
+    marginVertical: 8,
   },
-  deco: {
-    position: 'absolute',
-    fontSize: 20,
+  label: {
+    position:  'absolute',
+    width:     36,
+    height:    36,
+    alignItems:     'center',
+    justifyContent: 'center',
   },
-  wall: {
-    position:        'absolute',
-    left:            0,
-    right:           0,
-    top:             DOOR_TOP - 6,
-    height:          DOOR_H + 12,
-    backgroundColor: '#27104a',
-  },
-  floor: {
-    position:        'absolute',
-    left:            0,
-    right:           0,
-    height:          5,
-    backgroundColor: '#3d1a6e',
-    borderTopWidth:  1,
-    borderTopColor:  '#6d28d9',
-  },
-  doorFrame: {
-    position:        'absolute',
-    width:           DOOR_W + 10,
-    height:          DOOR_H + 10,
-    borderWidth:     3,
-    borderColor:     '#4a2800',
-    borderRadius:    6,
-    overflow:        'hidden',
-    backgroundColor: '#1a0a00',
-  },
-  doorFrameActive: {
-    borderColor:   '#facc15',
-    shadowColor:   '#facc15',
-    shadowOpacity: 0.5,
-    shadowRadius:  8,
-    elevation:     6,
-  },
-  doorBack: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems:      'center',
-    justifyContent:  'center',
-    backgroundColor: '#1a0a00',
-  },
-  doorBackCorrect: { backgroundColor: '#052e16' },
-  doorBackWrong:   { backgroundColor: '#1c0505' },
-  doorNum: {
-    fontSize:   24,
-    fontWeight: '800',
-  },
-  doorNumCorrect: { color: '#4ade80' },
-  doorNumWrong:   { color: '#f87171' },
-  doorResultIcon: { fontSize: 22, marginTop: 4 },
-  doorFace: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#5c2d00',
-    alignItems:      'center',
-    justifyContent:  'center',
-    borderRadius:    4,
-  },
-  doorKnob:     { fontSize: 18, marginBottom: 6 },
-  doorQuestion: { fontSize: 28, fontWeight: '800' },
-  doorTapHint:  { fontSize: 10, color: 'rgba(255,255,255,0.45)', marginTop: 4 },
-  player: {
-    fontSize: PLAYER_SIZE - 4,
-  },
-  hintBar: {
-    position:        'absolute',
-    bottom:          0,
-    left:            0,
-    right:           0,
-    height:          34,
-    alignItems:      'center',
-    justifyContent:  'center',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    borderTopWidth:  1,
-    borderTopColor:  '#3d1a6e',
-  },
-  hintTxt: {
-    fontSize:   13,
-    color:      'rgba(255,255,255,0.6)',
-    fontWeight: '600',
+  labelText: {
+    fontSize:   18,
+    fontWeight: 'bold',
+    textShadowColor:  '#000',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
 });

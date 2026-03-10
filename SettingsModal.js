@@ -3,10 +3,12 @@ import {
   Modal,
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const GAME_MODES = [
   {
@@ -65,14 +67,17 @@ const DIFFICULTIES = [
 ];
 
 export default function SettingsModal({ visible, onClose, settings, onSave }) {
+  const insets = useSafeAreaInsets();
   // page: 'mode' | 'options'
   const [page,  setPage]  = useState('mode');
   const [draft, setDraft] = useState(settings);
+  const [playerName, setPlayerName] = useState(settings.playerName ?? '');
 
   useEffect(() => {
     if (visible) {
       setPage('mode');
       setDraft(settings);
+      setPlayerName(settings.playerName ?? '');
     }
   }, [visible]);
 
@@ -95,7 +100,7 @@ export default function SettingsModal({ visible, onClose, settings, onSave }) {
   }
 
   function save() {
-    onSave(draft);
+    onSave({ ...draft, playerName: playerName.trim() });
     onClose();
   }
 
@@ -109,13 +114,24 @@ export default function SettingsModal({ visible, onClose, settings, onSave }) {
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingTop: Math.max(insets.top + 12, 24), paddingBottom: Math.max(insets.bottom + 16, 24) }]}>
           <View style={styles.handle} />
 
           {/* ── PAGE 1: Choose game mode ── */}
           {page === 'mode' && (
             <>
-              <Text style={styles.title}>Choose a Game Mode</Text>
+              <Text style={styles.title}>Who is playing?</Text>
+              <TextInput
+                style={styles.nameInput}
+                placeholder="Enter your name"
+                placeholderTextColor="#bbb"
+                value={playerName}
+                onChangeText={setPlayerName}
+                maxLength={20}
+                autoCapitalize="words"
+                returnKeyType="done"
+              />
+              <Text style={styles.sectionTitle}>Choose a Game Mode</Text>
               <ScrollView showsVerticalScrollIndicator={false}>
                 {GAME_MODES.map(m => (
                   <TouchableOpacity
@@ -218,8 +234,6 @@ const styles = StyleSheet.create({
   sheet: {
     flex:              1,
     paddingHorizontal: 24,
-    paddingBottom:     36,
-    paddingTop:        56, // room for status bar
   },
   handle: {
     // unused in full-screen mode, kept to avoid missing key errors
@@ -229,7 +243,28 @@ const styles = StyleSheet.create({
     fontSize:     24,
     fontWeight:   '800',
     color:        '#222',
-    marginBottom: 18,
+    marginBottom: 12,
+    textAlign:    'center',
+  },
+  nameInput: {
+    borderWidth:       2,
+    borderColor:       '#ddd',
+    borderRadius:      14,
+    paddingHorizontal: 16,
+    paddingVertical:   12,
+    fontSize:          18,
+    fontWeight:        '600',
+    color:             '#222',
+    marginBottom:      20,
+    backgroundColor:   '#fff',
+  },
+  sectionTitle: {
+    fontSize:     14,
+    fontWeight:   '700',
+    color:        '#888',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom:  10,
     textAlign:    'center',
   },
 

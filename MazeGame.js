@@ -1,29 +1,26 @@
 import { useState, useRef, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  Animated,
-  StyleSheet,
-  Dimensions,
-} from 'react-native';
+import { View, Text, StyleSheet, Dimensions, Animated } from 'react-native';
+import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
+import * as THREE from 'three';
+
+const _v = new THREE.Vector3();
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const GAME_W = SCREEN_W - 16;
+const GAME_H = Math.min(Math.round(SCREEN_H * 0.60), SCREEN_H - 240);
 
 const COLS   = 7;
 const ROWS   = 7;
-// Reserve ~170px for header + chalkboard + padding; cap by both width and height
-const SAFE_PERCENT = 0.42; // The maze will only take up 42% of the total screen height
-const CELL = Math.min(
-  Math.floor((SCREEN_W - 60) / COLS), // Width constraint (with more side padding)
-  Math.floor((SCREEN_H * SAFE_PERCENT) / ROWS), // Strict height constraint
-  50 // Maximum cap
-);
-const MAZE_W = CELL * COLS;
-const MAZE_H = CELL * ROWS;
-const WALL   = 1;
+const WALL_H = 0.55;
+const WALL_T = 0.07;
 
 const NUM_COLORS = ['#7c3aed', '#0891b2', '#c2410c', '#be185d'];
+const START_R = 0;
+const START_C = 0;
+const STEP_MS = 140;
+
+const CX = COLS / 2;   // world-space maze centre X
+const CZ = ROWS / 2;   // world-space maze centre Z
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -43,18 +40,14 @@ function generateMaze() {
     Array.from({ length: COLS }, () => ({ n: false, s: false, e: false, w: false }))
   );
   const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-
   function carve(r, c) {
     visited[r][c] = true;
     for (const [dr, dc, d1, d2] of shuffle([
-      [-1, 0, 'n', 's'],
-      [ 1, 0, 's', 'n'],
-      [ 0,-1, 'w', 'e'],
-      [ 0, 1, 'e', 'w'],
+      [-1, 0, 'n', 's'], [1, 0, 's', 'n'], [0, -1, 'w', 'e'], [0, 1, 'e', 'w'],
     ])) {
       const nr = r + dr, nc = c + dc;
       if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && !visited[nr][nc]) {
-        cells[r][c][d1]   = true;
+        cells[r][c][d1] = true;
         cells[nr][nc][d2] = true;
         carve(nr, nc);
       }
@@ -64,7 +57,6 @@ function generateMaze() {
   return cells;
 }
 
-// Dead ends = cells with only one open passage
 function findDeadEnds(cells, skipR, skipC) {
   const ends = [];
   for (let r = 0; r < ROWS; r++) {
@@ -77,7 +69,7 @@ function findDeadEnds(cells, skipR, skipC) {
   return ends;
 }
 
-// ── BFS pathfinder ───────────────────────────────────────────────────────────
+// ── BFS ──────────────────────────────────────────────────────────────────────
 
 function bfs(cells, fromR, fromC, toR, toC) {
   if (fromR === toR && fromC === toC) return [];
@@ -85,9 +77,8 @@ function bfs(cells, fromR, fromC, toR, toC) {
   const visited = new Set([`${fromR},${fromC}`]);
   while (queue.length) {
     const [r, c, path] = queue.shift();
-    const cell = cells[r][c];
     for (const [dr, dc, dir] of [[-1,0,'n'],[1,0,'s'],[0,-1,'w'],[0,1,'e']]) {
-      if (!cell[dir]) continue;
+      if (!cells[r][c][dir]) continue;
       const nr = r + dr, nc = c + dc;
       const key = `${nr},${nc}`;
       if (visited.has(key)) continue;
@@ -100,7 +91,7 @@ function bfs(cells, fromR, fromC, toR, toC) {
   return [];
 }
 
-// ── Number set builder ───────────────────────────────────────────────────────
+// ── Number builder ────────────────────────────────────────────────────────────
 
 function buildNumbers(answer) {
   const set = new Set([answer]);
@@ -111,34 +102,231 @@ function buildNumbers(answer) {
     tries++;
   }
   for (let i = 1; set.size < 4; i++) {
-    if (!set.has(answer + i))          set.add(answer + i);
+    if (!set.has(answer + i))                          set.add(answer + i);
     else if (answer - i >= 0 && !set.has(answer - i)) set.add(answer - i);
   }
   return shuffle([...set]);
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+// ── 3-D components ────────────────────────────────────────────────────────────
 
-const START_R = 0;
-const START_C = 0;
-const STEP_MS = 130; // ms per cell during walk
+// Directly overhead, north = up on screen
+function CameraRig() {
+  useFrame(({ camera }) => {
+    camera.up.set(0, 0, -1);
+    camera.lookAt(CX, 0, CZ);
+  });
+  return null;
+}
+
+// Walls derived from maze cell data
+function MazeWalls({ maze }) {
+  const wallColor = '#3d2a1a';
+  const walls = [];
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = maze[r][c];
+      if (!cell.n) {
+        walls.push(
+          <mesh key={`n${r}${c}`} position={[c + 0.5, WALL_H / 2, r]}>
+            <boxGeometry args={[1 + WALL_T, WALL_H, WALL_T]} />
+            <meshStandardMaterial color={wallColor} roughness={0.85} />
+          </mesh>
+        );
+      }
+      if (!cell.w) {
+        walls.push(
+          <mesh key={`w${r}${c}`} position={[c, WALL_H / 2, r + 0.5]}>
+            <boxGeometry args={[WALL_T, WALL_H, 1 + WALL_T]} />
+            <meshStandardMaterial color={wallColor} roughness={0.85} />
+          </mesh>
+        );
+      }
+    }
+  }
+  // South border
+  walls.push(
+    <mesh key="bs" position={[CX, WALL_H / 2, ROWS]}>
+      <boxGeometry args={[COLS + WALL_T, WALL_H, WALL_T]} />
+      <meshStandardMaterial color={wallColor} roughness={0.85} />
+    </mesh>
+  );
+  // East border
+  walls.push(
+    <mesh key="be" position={[COLS, WALL_H / 2, CZ]}>
+      <boxGeometry args={[WALL_T, WALL_H, ROWS + WALL_T]} />
+      <meshStandardMaterial color={wallColor} roughness={0.85} />
+    </mesh>
+  );
+
+  return <>{walls}</>;
+}
+
+// Floor tiles — each is tappable
+function MazeFloor({ maze, onCellTap }) {
+  return (
+    <>
+      {/* Base floor slab */}
+      <mesh position={[CX, -0.01, CZ]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[COLS, ROWS]} />
+        <meshStandardMaterial color="#12102a" roughness={0.98} />
+      </mesh>
+
+      {/* Per-cell tap planes */}
+      {maze.map((row, r) =>
+        row.map((_, c) => (
+          <mesh
+            key={`f${r}${c}`}
+            position={[c + 0.5, 0.001, r + 0.5]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            onClick={(e) => { e.stopPropagation(); onCellTap(r, c); }}
+          >
+            <planeGeometry args={[0.97, 0.97]} />
+            <meshStandardMaterial color="#1a1a30" roughness={0.97} transparent opacity={0.01} />
+          </mesh>
+        ))
+      )}
+    </>
+  );
+}
+
+// Projects orb group refs → 2D screen coords each frame via Animated.Value
+function LabelProjector({ orbRefs, labelAnims }) {
+  const { camera, size } = useThree();
+  useFrame(() => {
+    orbRefs.forEach((ref, i) => {
+      if (!ref.current) return;
+      _v.copy(ref.current.position);
+      _v.project(camera);
+      labelAnims[i].x.setValue((_v.x  *  0.5 + 0.5) * size.width  - 16);
+      labelAnims[i].y.setValue((-_v.y *  0.5 + 0.5) * size.height - 16);
+    });
+  });
+  return null;
+}
+
+// Glowing number orb at a dead-end cell
+function NumberOrb({ numCell, flash, groupRef }) {
+  const meshRef  = useRef();
+
+  // Flash colour
+  const isCorrect = flash === 'correct';
+  const isWrong   = flash === 'wrong';
+  const color     = isCorrect ? '#4ade80' : isWrong ? '#f87171' : numCell.color;
+  const emissiveI = isCorrect ? 1.4 : isWrong ? 1.2 : 0.7;
+
+  useFrame(({ clock }) => {
+    if (!groupRef.current) return;
+    groupRef.current.position.y = 0.32 + Math.sin(clock.elapsedTime * 1.6 + numCell.c * 1.3) * 0.07;
+  });
+
+  return (
+    <group ref={groupRef} position={[numCell.c + 0.5, 0.32, numCell.r + 0.5]}>
+      <mesh ref={meshRef}>
+        <sphereGeometry args={[0.33, 16, 16]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={emissiveI}
+          transparent
+          opacity={0.92}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+// Player sphere that smoothly tracks the logical grid position
+function Player({ playerPosRef, flashRef }) {
+  const meshRef  = useRef();
+  const curX = useRef(START_C + 0.5);
+  const curZ = useRef(START_R + 0.5);
+
+  useFrame(({ clock }, delta) => {
+    if (!meshRef.current) return;
+    const tx = playerPosRef.current.c + 0.5;
+    const tz = playerPosRef.current.r + 0.5;
+    curX.current += (tx - curX.current) * Math.min(1, delta * 12);
+    curZ.current += (tz - curZ.current) * Math.min(1, delta * 12);
+    const bob = Math.sin(clock.elapsedTime * 5) * 0.03;
+    meshRef.current.position.set(curX.current, 0.24 + bob, curZ.current);
+
+    const flash = flashRef.current;
+    const mat   = meshRef.current.material;
+    mat.color.set(flash === 'correct' ? '#4ade80' : flash === 'wrong' ? '#f87171' : '#fbbf24');
+    mat.emissive.set(flash === 'correct' ? '#4ade80' : flash === 'wrong' ? '#f87171' : '#fbbf24');
+  });
+
+  return (
+    <mesh ref={meshRef} position={[START_C + 0.5, 0.24, START_R + 0.5]}>
+      <sphereGeometry args={[0.2, 16, 16]} />
+      <meshStandardMaterial color="#fbbf24" emissive="#fbbf24" emissiveIntensity={0.7} />
+    </mesh>
+  );
+}
+
+// Start-cell marker (slightly lit pad)
+function StartMarker() {
+  return (
+    <mesh position={[START_C + 0.5, 0.002, START_R + 0.5]} rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[0.8, 0.8]} />
+      <meshStandardMaterial color="#7c3aed" emissive="#7c3aed" emissiveIntensity={0.3} transparent opacity={0.5} />
+    </mesh>
+  );
+}
+
+function Scene({ maze, numCells, playerPosRef, flashRef, onCellTap, hitNumIdx, orbRefs, labelAnims }) {
+  return (
+    <>
+      <color attach="background" args={['#0a0814']} />
+      <fog attach="fog" args={['#0a0814', 12, 22]} />
+
+      <ambientLight intensity={0.7} color="#c084fc" />
+      <directionalLight position={[CX, 9, CZ + 2]} intensity={1.8} color="#fff8e8" />
+      <pointLight position={[CX, 3.5, CZ]} color="#a855f7" intensity={2.5} distance={14} />
+      <pointLight position={[0.5, 2, 0.5]}           color="#f97316" intensity={1.2} distance={5} />
+      <pointLight position={[COLS - 0.5, 2, ROWS - 0.5]} color="#f97316" intensity={1.2} distance={5} />
+
+      <CameraRig />
+
+      <MazeFloor maze={maze} onCellTap={onCellTap} />
+      <MazeWalls maze={maze} />
+      <StartMarker />
+
+      {numCells.map((n, i) => (
+        <NumberOrb
+          key={i}
+          numCell={n}
+          flash={hitNumIdx === i ? flashRef.current : null}
+          groupRef={orbRefs[i]}
+        />
+      ))}
+
+      <Player playerPosRef={playerPosRef} flashRef={flashRef} />
+      <LabelProjector orbRefs={orbRefs} labelAnims={labelAnims} />
+    </>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function MazeGame({ question, onCorrect, onWrong }) {
-  const [maze,     setMaze]     = useState(null);
-  const [numCells, setNumCells] = useState([]);
-  const [flash,    setFlash]    = useState(null);   // null | 'correct' | 'wrong'
-  const [dest,     setDest]     = useState(null);   // [r,c] tapped destination
+  const [maze,      setMaze]      = useState(null);
+  const [numCells,  setNumCells]  = useState([]);
+  const [hitNumIdx, setHitNumIdx] = useState(null); // index of orb being hit
 
-  // Current grid position (for BFS / hit detection)
   const posRef      = useRef({ r: START_R, c: START_C });
   const mazeRef     = useRef(null);
   const numRef      = useRef([]);
   const flashRef    = useRef(null);
-  const walkingRef  = useRef(false);  // prevent overlapping walks
+  const walkingRef  = useRef(false);
 
-  // Smooth animated position (translate from top-left of maze)
-  const transX = useRef(new Animated.Value(START_C * CELL)).current;
-  const transY = useRef(new Animated.Value(START_R * CELL)).current;
+  const orbRefs    = useRef(Array.from({ length: 4 }, () => ({ current: null }))).current;
+  const labelAnims = useRef(Array.from({ length: 4 }, () => ({
+    x: new Animated.Value(-100),
+    y: new Animated.Value(-100),
+  }))).current;
 
   function resetGame() {
     const cells    = generateMaze();
@@ -162,83 +350,59 @@ export default function MazeGame({ question, onCorrect, onWrong }) {
       isCorrect: num === question.answer,
     }));
 
-    mazeRef.current  = cells;
-    numRef.current   = numData;
-    posRef.current   = { r: START_R, c: START_C };
-    flashRef.current = null;
+    mazeRef.current    = cells;
+    numRef.current     = numData;
+    posRef.current     = { r: START_R, c: START_C };
+    flashRef.current   = null;
     walkingRef.current = false;
-
-    transX.setValue(START_C * CELL);
-    transY.setValue(START_R * CELL);
 
     setMaze(cells);
     setNumCells(numData);
-    setFlash(null);
-    setDest(null);
+    setHitNumIdx(null);
   }
 
-  useEffect(() => {
-    resetGame();
-  }, [question.text]);
+  useEffect(() => { resetGame(); }, [question.text]);
 
-  // Walk the player along a pre-computed path, one cell at a time
   function walkPath(path) {
     if (!path.length) { walkingRef.current = false; return; }
     if (flashRef.current) { walkingRef.current = false; return; }
 
     const [nr, nc] = path[0];
-
-    Animated.parallel([
-      Animated.timing(transX, { toValue: nc * CELL, duration: STEP_MS, useNativeDriver: true }),
-      Animated.timing(transY, { toValue: nr * CELL, duration: STEP_MS, useNativeDriver: true }),
-    ]).start(({ finished }) => {
-      if (!finished) { walkingRef.current = false; return; }
-
+    setTimeout(() => {
       posRef.current = { r: nr, c: nc };
 
-      // Check for number hit
-      const hit = numRef.current.find(n => n.r === nr && n.c === nc);
-      if (hit) {
+      const hit = numRef.current.findIndex(n => n.r === nr && n.c === nc);
+      if (hit !== -1) {
         walkingRef.current = false;
-        setDest(null);
-        if (hit.isCorrect) {
+        const numCell = numRef.current[hit];
+        if (numCell.isCorrect) {
           flashRef.current = 'correct';
-          setFlash('correct');
+          setHitNumIdx(hit);
           setTimeout(() => onCorrect(), 800);
         } else {
           flashRef.current = 'wrong';
-          setFlash('wrong');
+          setHitNumIdx(hit);
           setTimeout(() => {
-            Animated.parallel([
-              Animated.spring(transX, { toValue: posRef.current.c * CELL, useNativeDriver: true, speed: 30, bounciness: 8 }),
-              Animated.spring(transY, { toValue: posRef.current.r * CELL, useNativeDriver: true, speed: 30, bounciness: 8 }),
-            ]).start();
             flashRef.current = null;
-            setFlash(null);
+            setHitNumIdx(null);
             onWrong();
-          }, 500);
+          }, 600);
         }
         return;
       }
 
       walkPath(path.slice(1));
-    });
+    }, STEP_MS);
   }
 
   function handleCellTap(r, c) {
     if (flashRef.current || !mazeRef.current) return;
-
     const { r: pr, c: pc } = posRef.current;
     if (r === pr && c === pc) return;
-
-    // Stop any ongoing walk
-    transX.stopAnimation();
-    transY.stopAnimation();
 
     const path = bfs(mazeRef.current, pr, pc, r, c);
     if (!path.length) return;
 
-    setDest([r, c]);
     walkingRef.current = true;
     walkPath(path);
   }
@@ -246,183 +410,97 @@ export default function MazeGame({ question, onCorrect, onWrong }) {
   if (!maze) return null;
 
   return (
-    <View style={styles.container}>
-      {/* Chalkboard */}
-      <View style={styles.chalkboard}>
-        <Text style={styles.chalkTitle}>📋  FIND THE ANSWER</Text>
-        <Text style={styles.chalkQ}>{question.text} = ?</Text>
-        <Text style={styles.chalkHint}>Tap anywhere in the maze to move</Text>
-      </View>
-
-      {/* Maze — outer dims include border so content area = exactly MAZE_W × MAZE_H */}
-      <View style={[styles.mazeWrap, { width: MAZE_W + WALL * 2, height: MAZE_H + WALL * 2 }]}>
-
-        {/* Walls + tap targets */}
-        {maze.map((row, r) =>
-          row.map((cell, c) => {
-            const isDestCell = dest && dest[0] === r && dest[1] === c;
-            return (
-              <TouchableOpacity
-                key={`${r}-${c}`}
-                activeOpacity={0.7}
-                onPress={() => handleCellTap(r, c)}
-                style={[
-                  styles.cell,
-                  {
-                    left:              c * CELL,
-                    top:               r * CELL,
-                    width:             CELL,
-                    height:            CELL,
-                    borderTopWidth:    cell.n ? 0 : WALL,
-                    borderBottomWidth: cell.s ? 0 : WALL,
-                    borderLeftWidth:   cell.w ? 0 : WALL,
-                    borderRightWidth:  cell.e ? 0 : WALL,
-                  },
-                  isDestCell && styles.cellDest,
-                ]}
-              />
-            );
-          })
-        )}
-
-        {/* Number bubbles */}
-        {numCells.map((n, i) => (
-          <TouchableOpacity
-            key={`num-${i}`}
-            activeOpacity={0.8}
-            onPress={() => handleCellTap(n.r, n.c)}
-            style={[
-              styles.numBubble,
-              {
-                left:            n.c * CELL + (CELL - (CELL - 10)) / 2,
-                top:             n.r * CELL + (CELL - (CELL - 10)) / 2,
-                width:           CELL - 10,
-                height:          CELL - 10,
-                borderRadius:    (CELL - 10) / 2,
-                backgroundColor: n.color,
-              },
-            ]}
-          >
-            <Text style={styles.numText}>{n.num}</Text>
-          </TouchableOpacity>
-        ))}
-
-        {/* Player — smoothly translated */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.player,
-            { width: CELL, height: CELL },
-            { transform: [{ translateX: transX }, { translateY: transY }] },
-            flash === 'correct' && styles.playerCorrect,
-            flash === 'wrong'   && styles.playerWrong,
-          ]}
+    <View style={styles.outer}>
+      <View style={styles.canvasWrap}>
+        <Canvas
+          camera={{ position: [CX, 9, CZ], fov: 52 }}
+          style={StyleSheet.absoluteFill}
+          gl={{ antialias: true }}
         >
-          <Text style={styles.playerEmoji}>🧒</Text>
-        </Animated.View>
+          <Scene
+            maze={maze}
+            numCells={numCells}
+            playerPosRef={posRef}
+            flashRef={flashRef}
+            onCellTap={handleCellTap}
+            hitNumIdx={hitNumIdx}
+            orbRefs={orbRefs}
+            labelAnims={labelAnims}
+          />
+        </Canvas>
+
+        {/* RN overlay: number labels tracking orb screen positions */}
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          {numCells.map((n, i) => {
+            const isCorrect = hitNumIdx === i && flashRef.current === 'correct';
+            const isWrong   = hitNumIdx === i && flashRef.current === 'wrong';
+            const color = isCorrect ? '#4ade80' : isWrong ? '#f87171' : '#ffffff';
+            return (
+              <Animated.View
+                key={i}
+                style={[styles.label, { left: labelAnims[i].x, top: labelAnims[i].y }]}
+              >
+                <Text style={[styles.labelText, { color }]}>{n.num}</Text>
+              </Animated.View>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
 }
 
-// ── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1, // Allow it to fill the parent
+  outer: {
     alignItems: 'center',
-    justifyContent: 'center', // Centers the maze vertically in the available space
-    paddingHorizontal: 20,
+    gap: 0,
   },
-
-  // Chalkboard
-  chalkboard: {
-    width:           MAZE_W + WALL * 2,
-    backgroundColor: '#2d5a27',
-    borderRadius:    12,
-    borderWidth:     4,
-    borderColor:     '#5a3e1b',
-    alignItems:      'center',
-    paddingVertical: 10,
-    marginBottom:    10,
-    shadowColor:     '#000',
-    shadowOpacity:   0.3,
-    shadowRadius:    6,
-    elevation:       4,
+  hud: {
+    width:             GAME_W,
+    backgroundColor:   '#2d5a27',
+    borderRadius:      12,
+    borderWidth:       4,
+    borderColor:       '#5a3e1b',
+    alignItems:        'center',
+    paddingVertical:   10,
+    marginBottom:      8,
+    shadowColor:       '#000',
+    shadowOpacity:     0.3,
+    shadowRadius:      6,
+    elevation:         4,
   },
-  chalkTitle: {
-    fontSize:      10,
-    color:         'rgba(255,255,255,0.6)',
-    fontWeight:    '700',
-    letterSpacing: 3,
-    marginBottom:  2,
+  hudLabel: {
+    fontSize: 9, color: 'rgba(255,255,255,0.55)', fontWeight: '700',
+    letterSpacing: 3, marginBottom: 2,
   },
-  chalkQ: {
-    fontSize:    28,
-    fontWeight:  '800',
-    color:       '#fff',
-    letterSpacing: 2,
-    fontFamily:  'monospace',
+  hudQ: {
+    fontSize: 28, fontWeight: '800', color: '#fff', letterSpacing: 2, fontFamily: 'monospace',
   },
-  chalkHint: {
-    fontSize:  11,
-    color:     'rgba(255,255,255,0.55)',
-    marginTop: 3,
-    fontStyle: 'italic',
+  hudHint: {
+    fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 3, fontStyle: 'italic',
   },
-
-  // Maze
-  mazeWrap: {
-    position:        'relative',
-    backgroundColor: '#1a1a2e',
-    borderWidth:     WALL,
-    borderColor:     '#4a3728',
-    borderRadius:    4,
-    overflow:        'hidden',
+  canvasWrap: {
+    width:        GAME_W,
+    height:       GAME_H,
+    borderRadius: 16,
+    overflow:     'hidden',
+    borderWidth:  1.5,
+    borderColor:  '#3d1a6e',
   },
-  cell: {
-    position:    'absolute',
-    borderColor: '#4a3728',
-  },
-  cellDest: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-
-  // Number bubbles
-  numBubble: {
+  label: {
     position:       'absolute',
-    alignItems:     'center',
-    justifyContent: 'center',
-    borderWidth:    2,
-    borderColor:    'rgba(255,255,255,0.3)',
-    shadowColor:    '#000',
-    shadowOpacity:  0.4,
-    shadowRadius:   4,
-    elevation:      4,
-  },
-  numText: {
-    fontSize:   CELL > 50 ? 18 : 14,
-    fontWeight: '800',
-    color:      '#fff',
-  },
-
-  // Player
-  player: {
-    position:       'absolute',
-    top:            0,
-    left:           0,
+    width:          32,
+    height:         32,
     alignItems:     'center',
     justifyContent: 'center',
   },
-  playerCorrect: {
-    backgroundColor: 'rgba(74,222,128,0.25)',
-    borderRadius:    CELL / 2,
-  },
-  playerWrong: {
-    backgroundColor: 'rgba(248,113,113,0.25)',
-    borderRadius:    CELL / 2,
-  },
-  playerEmoji: {
-    fontSize: CELL > 50 ? 26 : 20,
+  labelText: {
+    fontSize:         15,
+    fontWeight:       'bold',
+    textShadowColor:  '#000',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
 });

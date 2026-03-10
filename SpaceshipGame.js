@@ -14,12 +14,14 @@ const GAME_W    = SCREEN_W - 32;
 const GAME_H    = Math.round(SCREEN_H * 0.54); // taller — no control bar
 const TOTAL_H   = GAME_H;
 
-const TARGET_SIZE = 72;
-const SHIP_SIZE   = 44;
 const NUM_CHOICES = 4;
 
-const TARGET_TOP        = 28;
-const SHIP_BOTTOM_PX    = 40;                           // from container bottom
+// Scale game objects relative to screen width so they fit on any device
+const TARGET_SIZE = Math.round(Math.min(GAME_W / NUM_CHOICES * 0.72, 80));
+const SHIP_SIZE   = Math.round(TARGET_SIZE * 0.62);
+
+const TARGET_TOP        = Math.round(GAME_H * 0.05);
+const SHIP_BOTTOM_PX    = Math.round(GAME_H * 0.09);   // from container bottom
 const SHIP_CENTER_BOT   = SHIP_BOTTOM_PX + SHIP_SIZE / 2;
 const TARGET_BOT_FROM_BOT = TOTAL_H - TARGET_TOP - TARGET_SIZE;
 const MAX_LASER_H       = TARGET_BOT_FROM_BOT - SHIP_CENTER_BOT - 6;
