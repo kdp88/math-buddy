@@ -54,6 +54,34 @@ function LabelProjector({ groupRefs, labelAnims }) {
   return null;
 }
 
+// ─── Flickering candle ─────────────────────────────────────────────────────────
+
+function Candle({ position }) {
+  const flameRef = useRef();
+  useFrame(({ clock }) => {
+    if (!flameRef.current) return;
+    const t = clock.elapsedTime;
+    flameRef.current.scale.setScalar(
+      0.88 + Math.sin(t * 13) * 0.13 + Math.sin(t * 7.4) * 0.07,
+    );
+  });
+  return (
+    <group position={position}>
+      <mesh>
+        <cylinderGeometry args={[0.04, 0.04, 0.22, 8]} />
+        <meshStandardMaterial color="#e8e0d0" />
+      </mesh>
+      <group ref={flameRef} position={[0, 0.22, 0]}>
+        <mesh scale={[0.45, 1.6, 0.45]}>
+          <sphereGeometry args={[0.07, 8, 8]} />
+          <meshStandardMaterial color="#fbbf24" emissive="#f97316" emissiveIntensity={4} transparent opacity={0.95} />
+        </mesh>
+      </group>
+      <pointLight position={[0, 0.3, 0]} color="#f97316" intensity={2.5} distance={5} />
+    </group>
+  );
+}
+
 // ─── Flickering torch ─────────────────────────────────────────────────────────
 
 function Torch({ position }) {
@@ -156,6 +184,67 @@ function FloatingGhost({ index, ghost, hitResult, onTap, groupRef }) {
 
 // ─── Corridor scene ───────────────────────────────────────────────────────────
 
+function Table({ position, rotation }) {
+  const [x, y, z] = position;
+  const wood     = '#3b1f0e';
+  const darkWood = '#2a1508';
+  const knob     = '#1a0d04';
+  return (
+    <group position={[x, y, z]} rotation={rotation}>
+      {/* Table top */}
+      <mesh position={[0, 0.82, 0]}>
+        <boxGeometry args={[1.1, 0.07, 0.65]} />
+        <meshStandardMaterial color={wood} roughness={0.85} />
+      </mesh>
+      {/* Left side panel */}
+      <mesh position={[-0.52, 0.41, 0]}>
+        <boxGeometry args={[0.06, 0.82, 0.65]} />
+        <meshStandardMaterial color={darkWood} roughness={0.9} />
+      </mesh>
+      {/* Right side panel */}
+      <mesh position={[0.52, 0.41, 0]}>
+        <boxGeometry args={[0.06, 0.82, 0.65]} />
+        <meshStandardMaterial color={darkWood} roughness={0.9} />
+      </mesh>
+      {/* Back panel */}
+      <mesh position={[0, 0.41, -0.3]}>
+        <boxGeometry args={[1.1, 0.82, 0.05]} />
+        <meshStandardMaterial color={darkWood} roughness={0.9} />
+      </mesh>
+      {/* Bottom panel */}
+      <mesh position={[0, 0.04, 0]}>
+        <boxGeometry args={[1.1, 0.06, 0.65]} />
+        <meshStandardMaterial color={darkWood} roughness={0.9} />
+      </mesh>
+      {/* Top drawer front */}
+      <mesh position={[0, 0.65, 0.315]}>
+        <boxGeometry args={[0.92, 0.28, 0.04]} />
+        <meshStandardMaterial color={wood} roughness={0.8} />
+      </mesh>
+      {/* Bottom drawer front */}
+      <mesh position={[0, 0.34, 0.315]}>
+        <boxGeometry args={[0.92, 0.28, 0.04]} />
+        <meshStandardMaterial color={wood} roughness={0.8} />
+      </mesh>
+      {/* Drawer knobs */}
+      <mesh position={[0, 0.65, 0.345]}>
+        <sphereGeometry args={[0.035, 8, 8]} />
+        <meshStandardMaterial color={knob} metalness={0.4} roughness={0.5} />
+      </mesh>
+      <mesh position={[0, 0.34, 0.345]}>
+        <sphereGeometry args={[0.035, 8, 8]} />
+        <meshStandardMaterial color={knob} metalness={0.4} roughness={0.5} />
+      </mesh>
+      {/* Candle placed via <Candle> in Scene for flickering */}
+      {/* Skull */}
+      <mesh position={[-0.2, 0.92, 0.05]}>
+        <sphereGeometry args={[0.12, 10, 10]} />
+        <meshStandardMaterial color="#d4c9a8" roughness={0.8} />
+      </mesh>
+    </group>
+  );
+}
+
 function Corridor() {
   return (
     <>
@@ -193,6 +282,7 @@ function Corridor() {
         <boxGeometry args={[0.08, 0.16, 14]} />
         <meshStandardMaterial color="#3e1f0a" />
       </mesh>
+      <Table position={[3.7, -1.4, -0.4]} rotation={[0, Math.PI / 2, 0]} />
     </>
   );
 }
@@ -217,6 +307,8 @@ function Scene({ ghosts, onTap, hitResults, groupRefs, labelAnims }) {
       <Torch position={[ 4.2, 1.2, -1.8]} />
       <Torch position={[-4.2, 1.2, -3.5]} />
       <Torch position={[ 4.2, 1.2, -3.5]} />
+
+      <Candle position={[4.0, -0.42, -0.7]} />
 
       {ghosts.map((ghost, i) => (
         <FloatingGhost
