@@ -77,7 +77,7 @@ function Candle({ position }) {
           <meshStandardMaterial color="#fbbf24" emissive="#f97316" emissiveIntensity={4} transparent opacity={0.95} />
         </mesh>
       </group>
-      <pointLight position={[0, 0.3, 0]} color="#f97316" intensity={2.5} distance={5} />
+      <pointLight position={[0, 0.3, 0]} color="#f9de16" intensity={4.5} distance={5} />
     </group>
   );
 }
@@ -245,6 +245,63 @@ function Table({ position, rotation }) {
   );
 }
 
+function Bookcase({ position }) {
+  const [x, y, z] = position;
+  const wood     = '#2a1508';
+  const darkWood = '#1a0d04';
+  const spines   = ['#4a1942', '#1a3a1a', '#1a2a4a', '#3a2a0a', '#3a0a0a', '#0a2a3a'];
+  // Overall: 1.2 wide × 3.6 tall × 0.38 deep — nearly floor-to-ceiling
+  return (
+    <group position={[x, y, z]} rotation={[0, Math.PI / 2, 0]}>
+      {/* Left side */}
+      <mesh position={[-0.59, 1.8, 0]}>
+        <boxGeometry args={[0.06, 3.6, 0.38]} />
+        <meshStandardMaterial color={wood} roughness={0.9} />
+      </mesh>
+      {/* Right side */}
+      <mesh position={[0.59, 1.8, 0]}>
+        <boxGeometry args={[0.06, 3.6, 0.38]} />
+        <meshStandardMaterial color={wood} roughness={0.9} />
+      </mesh>
+      {/* Back panel */}
+      <mesh position={[0, 1.8, -0.17]}>
+        <boxGeometry args={[1.18, 3.6, 0.04]} />
+        <meshStandardMaterial color={darkWood} roughness={1} />
+      </mesh>
+      {/* Top cap */}
+      <mesh position={[0, 3.57, 0]}>
+        <boxGeometry args={[1.24, 0.06, 0.38]} />
+        <meshStandardMaterial color={wood} roughness={0.85} />
+      </mesh>
+      {/* Bottom base */}
+      <mesh position={[0, 0.03, 0]}>
+        <boxGeometry args={[1.24, 0.06, 0.42]} />
+        <meshStandardMaterial color={darkWood} roughness={0.9} />
+      </mesh>
+      {/* Shelves at y = 0.9, 1.65, 2.4, 3.15 */}
+      {[0.9, 1.65, 2.4, 3.15].map((sy, i) => (
+        <mesh key={i} position={[0, sy, 0]}>
+          <boxGeometry args={[1.18, 0.05, 0.36]} />
+          <meshStandardMaterial color={wood} roughness={0.85} />
+        </mesh>
+      ))}
+      {/* Books — 5 shelves × a few books each */}
+      {[0.0, 0.9, 1.65, 2.4, 3.15].map((shelfY, si) =>
+        [-0.38, -0.18, 0.0, 0.18, 0.36].map((bx, bi) => {
+          const h   = 0.55 + ((si * 3 + bi) % 4) * 0.07;
+          const col = spines[(si * 5 + bi) % spines.length];
+          return (
+            <mesh key={`${si}-${bi}`} position={[bx, shelfY + 0.05 + h / 2, 0.03]}>
+              <boxGeometry args={[0.13, h, 0.29]} />
+              <meshStandardMaterial color={col} roughness={0.9} />
+            </mesh>
+          );
+        })
+      )}
+    </group>
+  );
+}
+
 function Corridor() {
   return (
     <>
@@ -283,6 +340,7 @@ function Corridor() {
         <meshStandardMaterial color="#3e1f0a" />
       </mesh>
       <Table position={[3.7, -1.4, -0.4]} rotation={[0, Math.PI / 2, 0]} />
+      <Bookcase position={[-4.25, -1.4, -0.3]} />
     </>
   );
 }
@@ -300,6 +358,7 @@ function Scene({ ghosts, onTap, hitResults, groupRefs, labelAnims }) {
       <pointLight position={[-4, 1.4, -3.5]} color="#f97316" intensity={2.5} distance={7} />
       <pointLight position={[ 4, 1.4, -3.5]} color="#f97316" intensity={2.5} distance={7} />
       <pointLight position={[0, 1.5, -3.5]} color="#a855f7" intensity={2.0} distance={6} />
+      <pointLight position={[-2.5, 1.8, 0.5]} color="#ffe4b5" intensity={5.0} distance={6} />
 
       <Corridor />
 
@@ -308,7 +367,7 @@ function Scene({ ghosts, onTap, hitResults, groupRefs, labelAnims }) {
       <Torch position={[-4.2, 1.2, -3.5]} />
       <Torch position={[ 4.2, 1.2, -3.5]} />
 
-      <Candle position={[4.0, -0.42, -0.7]} />
+      <Candle position={[3.7, -0.39, -0.5]} />
 
       {ghosts.map((ghost, i) => (
         <FloatingGhost
