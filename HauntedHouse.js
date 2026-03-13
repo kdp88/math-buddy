@@ -313,7 +313,7 @@ function BearCarpet({ position }) {
   }, [scene]);
 
   return (
-    <group ref={groupRef} position={position} rotation={[0, Math.PI, 0]} scale={0.015}>
+    <group ref={groupRef} position={position} rotation={[0, 0, 0]} scale={0.015}>
       <primitive object={scene} />
     </group>
   );
@@ -362,9 +362,15 @@ function Corridor() {
   );
 }
 
-function Scene({ ghosts, onTap, hitResults, groupRefs, labelAnims }) {
+function SceneReady({ onReady }) {
+  useEffect(() => { onReady(); }, []);
+  return null;
+}
+
+function Scene({ ghosts, onTap, hitResults, groupRefs, labelAnims, onReady }) {
   return (
     <>
+      <SceneReady onReady={onReady} />
       <color attach="background" args={['#1e0a3c']} />
       <fog attach="fog" args={['#1e0a3c', 9, 16]} />
 
@@ -377,7 +383,7 @@ function Scene({ ghosts, onTap, hitResults, groupRefs, labelAnims }) {
       <pointLight position={[-2.5, 1.8, 0.5]} color="#ffe4b5" intensity={5.0} distance={6} />
 
       <Corridor />
-      <BearCarpet position={[0, -1.5, 1.5]} />
+      <BearCarpet position={[0, -1.5, -0.2]} />
 
       <Torch position={[ 4.2, 1.2, -1.8]} />
       <Torch position={[-4.2, 1.2, -3.5]} />
@@ -408,8 +414,9 @@ export default function HauntedHouse({ question, onCorrect, onWrong }) {
   const GAME_W = SCREEN_W - 32;
   const GAME_H = Math.min(Math.round(SCREEN_H * 0.54), SCREEN_H - 260);
 
-  const [ghosts,     setGhosts]     = useState(() => buildGhosts(question.answer));
-  const [hitResults, setHitResults] = useState(['none', 'none', 'none', 'none']);
+  const [ghosts,      setGhosts]      = useState(() => buildGhosts(question.answer));
+  const [hitResults,  setHitResults]  = useState(['none', 'none', 'none', 'none']);
+  const [canvasReady, setCanvasReady] = useState(false);
   const doneRef = useRef(false);
 
   // One ref per ghost for 3D group; one Animated.ValueXY per ghost for label position
@@ -452,11 +459,12 @@ export default function HauntedHouse({ question, onCorrect, onWrong }) {
             hitResults={hitResults}
             groupRefs={groupRefs}
             labelAnims={labelAnims}
+            onReady={() => setCanvasReady(true)}
           />
         </Canvas>
 
-        {/* RN overlay: number labels that track ghost positions via Animated */}
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {/* RN overlay: number labels — hidden until 3D scene has mounted */}
+        <View style={[StyleSheet.absoluteFill, { opacity: canvasReady ? 1 : 0 }]} pointerEvents="none">
           {ghosts.map((ghost, i) => {
             const isWrong   = hitResults[i] === 'wrong';
             const isCorrect = hitResults[i] === 'correct';
