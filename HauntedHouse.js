@@ -1,11 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions, Animated } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions, Animated } from 'react-native';
+import GameLoader from './GameLoader';
 import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
 import * as THREE from 'three';
-
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const GAME_W = SCREEN_W - 32;
-const GAME_H = Math.min(Math.round(SCREEN_H * 0.54), SCREEN_H - 260);
+import { useGLTF } from '@react-three/drei/native';
 
 const NUM_GHOSTS = 4;
 
@@ -140,9 +138,9 @@ function FloatingGhost({ index, ghost, hitResult, onTap, groupRef }) {
 
     if (hitResult === 'correct') {
       const s = groupRef.current.scale.x;
-      if (s < 4) groupRef.current.scale.setScalar(s + delta * 2);
+      if (s > 0) groupRef.current.scale.setScalar(Math.max(0, s - delta * 2.5));
       const op = bodyRef.current.material.opacity;
-      if (op > 0) bodyRef.current.material.opacity = Math.max(0, op - delta * 3);
+      if (op > 0) bodyRef.current.material.opacity = Math.max(0, op - delta * 2);
       return;
     }
 
@@ -154,9 +152,9 @@ function FloatingGhost({ index, ghost, hitResult, onTap, groupRef }) {
 
   const isWrong   = hitResult === 'wrong';
   const isCorrect = hitResult === 'correct';
-  const bodyColor = isCorrect ? '#4ade80' : isWrong ? '#f87171' : '#e9d5ff';
-  const emissive  = isCorrect ? '#4ade80' : isWrong ? '#ef4444' : '#c4b5fd';
-  const emissiveI = isCorrect ? 1.5       : isWrong ? 1.2       : 0.55;
+  const bodyColor = isCorrect ? '#ffffff' : isWrong ? '#f87171' : '#e9d5ff';
+  const emissive  = isCorrect ? '#ffffff' : isWrong ? '#ef4444' : '#c4b5fd';
+  const emissiveI = isCorrect ? 2.5       : isWrong ? 1.2       : 0.55;
 
   return (
     <group ref={groupRef} position={[GHOST_XS[index], 0, GHOST_START_Z[index]]}>
@@ -302,6 +300,25 @@ function Bookcase({ position }) {
   );
 }
 
+function BearCarpet({ position }) {
+  const { scene } = useGLTF(require('./assets/models/bear_skin_rug.glb'));
+  const groupRef = useRef();
+
+  useEffect(() => {
+    if (!groupRef.current) return;
+    const box = new THREE.Box3().setFromObject(groupRef.current);
+    const bottomY = box.min.y;
+    // Shift the inner primitive up so its bottom sits exactly at y=0 of the group
+    groupRef.current.children[0].position.y -= bottomY;
+  }, [scene]);
+
+  return (
+    <group ref={groupRef} position={position} rotation={[0, Math.PI, 0]} scale={0.015}>
+      <primitive object={scene} />
+    </group>
+  );
+}
+
 function Corridor() {
   return (
     <>
@@ -339,8 +356,8 @@ function Corridor() {
         <boxGeometry args={[0.08, 0.16, 14]} />
         <meshStandardMaterial color="#3e1f0a" />
       </mesh>
-      <Table position={[3.7, -1.4, -0.4]} rotation={[0, Math.PI / 2, 0]} />
-      <Bookcase position={[-4.25, -1.4, -0.3]} />
+      <Table position={[3.7, -1.4, -2.0]} rotation={[0, Math.PI / 2, 0]} />
+      <Bookcase position={[-4.25, -1.4, -2.0]} />
     </>
   );
 }
@@ -348,12 +365,11 @@ function Corridor() {
 function Scene({ ghosts, onTap, hitResults, groupRefs, labelAnims }) {
   return (
     <>
-      <color attach="background" args={['#100520']} />
-      <fog attach="fog" args={['#100520', 9, 16]} />
+      <color attach="background" args={['#1e0a3c']} />
+      <fog attach="fog" args={['#1e0a3c', 9, 16]} />
 
-      <ambientLight intensity={0.9} color="#c084fc" />
+      <ambientLight intensity={2.2} color="#c084fc" />
       <pointLight position={[0, 3, 2]}   color="#ffffff" intensity={3.5} distance={12} />
-      <pointLight position={[-4, 1.4, -1.8]} color="#f97316" intensity={3.0} distance={8} />
       <pointLight position={[ 4, 1.4, -1.8]} color="#f97316" intensity={3.0} distance={8} />
       <pointLight position={[-4, 1.4, -3.5]} color="#f97316" intensity={2.5} distance={7} />
       <pointLight position={[ 4, 1.4, -3.5]} color="#f97316" intensity={2.5} distance={7} />
@@ -361,13 +377,13 @@ function Scene({ ghosts, onTap, hitResults, groupRefs, labelAnims }) {
       <pointLight position={[-2.5, 1.8, 0.5]} color="#ffe4b5" intensity={5.0} distance={6} />
 
       <Corridor />
+      <BearCarpet position={[0, -1.5, 1.5]} />
 
-      <Torch position={[-4.2, 1.2, -1.8]} />
       <Torch position={[ 4.2, 1.2, -1.8]} />
       <Torch position={[-4.2, 1.2, -3.5]} />
       <Torch position={[ 4.2, 1.2, -3.5]} />
 
-      <Candle position={[3.7, -0.39, -0.5]} />
+      <Candle position={[3.7, -0.39, -2.0]} />
 
       {ghosts.map((ghost, i) => (
         <FloatingGhost
@@ -388,6 +404,10 @@ function Scene({ ghosts, onTap, hitResults, groupRefs, labelAnims }) {
 // ─── Main component ────────────────────────────────────────────────────────────
 
 export default function HauntedHouse({ question, onCorrect, onWrong }) {
+  const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
+  const GAME_W = SCREEN_W - 32;
+  const GAME_H = Math.min(Math.round(SCREEN_H * 0.54), SCREEN_H - 260);
+
   const [ghosts,     setGhosts]     = useState(() => buildGhosts(question.answer));
   const [hitResults, setHitResults] = useState(['none', 'none', 'none', 'none']);
   const doneRef = useRef(false);
@@ -419,48 +439,48 @@ export default function HauntedHouse({ question, onCorrect, onWrong }) {
   }
 
   return (
-    <View style={styles.container}>
-      <Canvas
-        camera={{ position: [0, 0.2, 4.5], fov: 80 }}
-        style={StyleSheet.absoluteFill}
-        gl={{ antialias: true }}
-      >
-        <Scene
-          ghosts={ghosts}
-          onTap={tapGhost}
-          hitResults={hitResults}
-          groupRefs={groupRefs}
-          labelAnims={labelAnims}
-        />
-      </Canvas>
+    <View style={[styles.container, { width: GAME_W, height: GAME_H }]}>
+      <GameLoader color="#c084fc" background="#1e0a3c">
+        <Canvas
+          camera={{ position: [0, 0.2, 4.5], fov: 72 }}
+          style={StyleSheet.absoluteFill}
+          gl={{ antialias: true }}
+        >
+          <Scene
+            ghosts={ghosts}
+            onTap={tapGhost}
+            hitResults={hitResults}
+            groupRefs={groupRefs}
+            labelAnims={labelAnims}
+          />
+        </Canvas>
 
-      {/* RN overlay: number labels that track ghost positions via Animated */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {ghosts.map((ghost, i) => {
-          const isWrong   = hitResults[i] === 'wrong';
-          const isCorrect = hitResults[i] === 'correct';
-          const color = isCorrect ? '#4ade80' : isWrong ? '#f87171' : '#ffffff';
-          return (
-            <Animated.View
-              key={i}
-              style={[
-                styles.label,
-                { left: labelAnims[i].x, top: labelAnims[i].y },
-              ]}
-            >
-              <Text style={[styles.labelText, { color }]}>{ghost.num}</Text>
-            </Animated.View>
-          );
-        })}
-      </View>
+        {/* RN overlay: number labels that track ghost positions via Animated */}
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          {ghosts.map((ghost, i) => {
+            const isWrong   = hitResults[i] === 'wrong';
+            const isCorrect = hitResults[i] === 'correct';
+            const color = isCorrect ? '#4ade80' : isWrong ? '#f87171' : '#ffffff';
+            return (
+              <Animated.View
+                key={i}
+                style={[
+                  styles.label,
+                  { left: labelAnims[i].x, top: labelAnims[i].y },
+                ]}
+              >
+                <Text style={[styles.labelText, { color }]}>{ghost.num}</Text>
+              </Animated.View>
+            );
+          })}
+        </View>
+      </GameLoader>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    width:          GAME_W,
-    height:         GAME_H,
     borderRadius:   20,
     overflow:       'hidden',
     borderWidth:    1.5,
