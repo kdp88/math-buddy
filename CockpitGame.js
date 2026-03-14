@@ -1,11 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Animated } from 'react-native';
-
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const GAME_W  = SCREEN_W - 16;
-const GAME_H  = Math.min(Math.round(SCREEN_H * 0.62), SCREEN_H - 220);
-const WIN_H   = Math.round(GAME_H * 0.60);   // space window area
-const DASH_H  = GAME_H - WIN_H;              // dashboard area
+import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions, Animated, Easing } from 'react-native';
 
 // ── Target layout (fraction of window area) ──────────────────────────────────
 const TARGET_SLOTS = [
@@ -16,14 +10,25 @@ const TARGET_SLOTS = [
 ];
 const NUM_COLORS = ['#7c3aed', '#0891b2', '#c2410c', '#be185d'];
 
-// ── Starfield (static, generated once) ───────────────────────────────────────
-const STARS = Array.from({ length: 80 }, (_, i) => ({
-  id:   i,
-  x:    0.03 + Math.random() * 0.94,
-  y:    0.04 + Math.random() * 0.88,
-  size: Math.random() < 0.18 ? 2.5 : Math.random() * 1.5 + 0.8,
-  op:   Math.random() * 0.6 + 0.3,
-}));
+// ── Starfield — 3 parallax layers (far/mid/near), each doubled for seamless wrap ──
+function makeStars(count, minSize, maxSize, minOp, maxOp) {
+  return Array.from({ length: count }, () => ({
+    x:    Math.random(),
+    y:    0.04 + Math.random() * 0.88,
+    size: minSize + Math.random() * (maxSize - minSize),
+    op:   minOp  + Math.random() * (maxOp  - minOp),
+  }));
+}
+const FAR_STARS  = makeStars(32, 0.5, 1.4, 0.15, 0.45);
+const MID_STARS  = makeStars(22, 1.0, 2.2, 0.30, 0.65);
+const NEAR_STARS = makeStars(12, 2.0, 3.5, 0.55, 0.90);
+
+// ── Flying planets ────────────────────────────────────────────────────────────
+const PLANET_DEFS = [
+  { emoji: '🌍', size: 40, yFrac: 0.18, duration: 28000, stagger:     0 },
+  { emoji: '🪐', size: 56, yFrac: 0.62, duration: 20000, stagger:  8000 },
+  { emoji: '🌕', size: 26, yFrac: 0.40, duration: 14000, stagger: 15000 },
+];
 
 // ── Dashboard button definitions ──────────────────────────────────────────────
 const L_BTNS = [
@@ -133,8 +138,8 @@ function NumberTarget({ target, onTap, hit, px, py }) {
 }
 
 // ── Steering wheel ────────────────────────────────────────────────────────────
-function SteeringWheel() {
-  const WR = Math.min(DASH_H * 0.55, 64); // rim radius
+function SteeringWheel({ dashH }) {
+  const WR = Math.min(dashH * 0.55, 64); // rim radius
   return (
     <View style={s.wheelWrap}>
       {/* Rim */}
@@ -153,9 +158,54 @@ function SteeringWheel() {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function CockpitGame({ question, onCorrect, onWrong }) {
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const gameW = screenW - 16;
+  const gameH = Math.min(Math.round(screenH * 0.62), screenH - 220);
+  const winH  = Math.round(gameH * 0.60);
+  const dashH = gameH - winH;
+
   const [targets,    setTargets]    = useState(() => buildTargets(question.answer));
   const [hitResults, setHitResults] = useState(['none','none','none','none']);
   const doneRef = useRef(false);
+
+  const farScroll  = useRef(new Animated.Value(0)).current;
+  const midScroll  = useRef(new Animated.Value(0)).current;
+  const nearScroll = useRef(new Animated.Value(0)).current;
+  const planetXRefs = useRef(PLANET_DEFS.map(() => new Animated.Value(-9999)));
+
+  useEffect(() => {
+    farScroll.setValue(0);
+    midScroll.setValue(0);
+    nearScroll.setValue(0);
+    const anims = [
+      Animated.loop(Animated.timing(farScroll,  { toValue: -gameW, duration: 18000, useNativeDriver: true, easing: Easing.linear })),
+      Animated.loop(Animated.timing(midScroll,  { toValue: -gameW, duration:  9000, useNativeDriver: true, easing: Easing.linear })),
+      Animated.loop(Animated.timing(nearScroll, { toValue: -gameW, duration:  4500, useNativeDriver: true, easing: Easing.linear })),
+    ];
+    anims.forEach(a => a.start());
+    return () => anims.forEach(a => a.stop());
+  }, [gameW]);
+
+  useEffect(() => {
+    const timers = [];
+    PLANET_DEFS.forEach((p, i) => {
+      const anim = planetXRefs.current[i];
+      const runLoop = () => {
+        anim.setValue(gameW + p.size);
+        Animated.timing(anim, {
+          toValue:         -p.size * 2,
+          duration:        p.duration,
+          useNativeDriver: true,
+          easing:          Easing.linear,
+        }).start(({ finished }) => { if (finished) runLoop(); });
+      };
+      timers.push(setTimeout(runLoop, p.stagger));
+    });
+    return () => {
+      timers.forEach(t => clearTimeout(t));
+      planetXRefs.current.forEach(a => a.stopAnimation());
+    };
+  }, [gameW]);
 
   useEffect(() => {
     setTargets(buildTargets(question.answer));
@@ -177,31 +227,45 @@ export default function CockpitGame({ question, onCorrect, onWrong }) {
   }
 
   return (
-    <View style={s.container}>
+    <View style={[s.container, { width: gameW, height: gameH }]}>
 
       {/* ══ SPACE WINDOW ══════════════════════════════════════════════════════ */}
-      <View style={s.spaceWin}>
+      <View style={[s.spaceWin, { width: gameW, height: winH }]}>
 
-        {/* Starfield */}
-        {STARS.map(star => (
-          <View key={star.id} style={[s.star, {
-            left:    star.x * (GAME_W - 40) + 20,
-            top:     star.y * (WIN_H  - 24) + 8,
-            width:   star.size,
-            height:  star.size,
-            opacity: star.op,
-          }]} />
+        {/* Scrolling starfield — 3 parallax layers, each doubled for seamless wrap */}
+        {[
+          [FAR_STARS,  farScroll],
+          [MID_STARS,  midScroll],
+          [NEAR_STARS, nearScroll],
+        ].map(([stars, scroll], li) => (
+          <Animated.View key={li} pointerEvents="none"
+            style={[StyleSheet.absoluteFill, { transform: [{ translateX: scroll }] }]}>
+            {stars.flatMap((star, i) => {
+              const top = star.y * (winH - 24) + 8;
+              const sz  = { width: star.size, height: star.size };
+              return [
+                <View key={i}     style={[s.star, { left: star.x * gameW,             top, ...sz, opacity: star.op }]} />,
+                <View key={i+'b'} style={[s.star, { left: (star.x + 1) * gameW,       top, ...sz, opacity: star.op }]} />,
+              ];
+            })}
+          </Animated.View>
         ))}
 
         {/* Galaxy blob (soft glow) */}
-        <View style={s.galaxyOuter}>
+        <View style={[s.galaxyOuter, { left: gameW * 0.32, top: winH * 0.06, width: gameW * 0.38, height: winH * 0.52 }]}>
           <View style={s.galaxyInner} />
         </View>
 
-        {/* Distant planet */}
-        <View style={s.planet}>
-          <View style={s.planetRing} />
-        </View>
+        {/* Flying planets */}
+        {PLANET_DEFS.map((p, i) => (
+          <Animated.View key={`planet-${i}`} pointerEvents="none" style={{
+            position: 'absolute',
+            top:      p.yFrac * winH - p.size / 2,
+            transform: [{ translateX: planetXRefs.current[i] }],
+          }}>
+            <Text style={{ fontSize: p.size, lineHeight: p.size * 1.3 }}>{p.emoji}</Text>
+          </Animated.View>
+        ))}
 
         {/* Windshield frame — pillars + top bar */}
         <View style={[s.framePillar, { left: 0 }]} />
@@ -218,8 +282,8 @@ export default function CockpitGame({ question, onCorrect, onWrong }) {
             target={t}
             onTap={() => handleTap(i)}
             hit={hitResults[i]}
-            px={TARGET_SLOTS[i].cx * GAME_W}
-            py={TARGET_SLOTS[i].cy * WIN_H}
+            px={TARGET_SLOTS[i].cx * gameW}
+            py={TARGET_SLOTS[i].cy * winH}
           />
         ))}
       </View>
@@ -248,7 +312,7 @@ export default function CockpitGame({ question, onCorrect, onWrong }) {
           </View>
 
           {/* ── Center steering wheel + column ── */}
-          <SteeringWheel />
+          <SteeringWheel dashH={dashH} />
 
           {/* ── Right button cluster ── */}
           <View style={s.btnPanel}>
@@ -284,8 +348,6 @@ export default function CockpitGame({ question, onCorrect, onWrong }) {
 // ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   container: {
-    width:         GAME_W,
-    height:        GAME_H,
     borderRadius:  14,
     overflow:      'hidden',
     borderWidth:   2.5,
@@ -295,8 +357,6 @@ const s = StyleSheet.create({
 
   // Space window
   spaceWin: {
-    width:           GAME_W,
-    height:          WIN_H,
     backgroundColor: '#00050f',
     overflow:        'hidden',
   },
@@ -307,10 +367,6 @@ const s = StyleSheet.create({
   },
   galaxyOuter: {
     position:        'absolute',
-    left:            GAME_W * 0.32,
-    top:             WIN_H  * 0.06,
-    width:           GAME_W * 0.38,
-    height:          WIN_H  * 0.52,
     borderRadius:    9999,
     backgroundColor: 'rgba(80,60,160,0.13)',
   },
@@ -323,30 +379,6 @@ const s = StyleSheet.create({
     borderRadius:    9999,
     backgroundColor: 'rgba(120,100,220,0.18)',
   },
-  planet: {
-    position:     'absolute',
-    right:        GAME_W * 0.10,
-    top:          WIN_H  * 0.08,
-    width:        42,
-    height:       42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(180,140,80,0.55)',
-    borderWidth:  1,
-    borderColor:  'rgba(230,180,80,0.4)',
-  },
-  planetRing: {
-    position:    'absolute',
-    left:        -14,
-    top:         18,
-    width:       70,
-    height:      8,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: 'rgba(230,180,80,0.4)',
-    backgroundColor: 'transparent',
-    transform:   [{ rotate: '-18deg' }],
-  },
-
   // Window frame
   framePillar: {
     position:        'absolute',

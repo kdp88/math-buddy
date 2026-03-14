@@ -4,27 +4,25 @@
     "slug": "math-buddy",
     "version": "1.0.0",
     "orientation": "default",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/math_bro.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/math_bro.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#00050f"
     },
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/math_bro.png",
+        "backgroundColor": "#00050f"
       },
       "package": "com.anonymous.mathbuddy"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/math_bro.png"
     },
     "assetBundlePatterns": [
       "assets/**"

@@ -5,27 +5,10 @@ import {
   TouchableOpacity,
   Animated,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-
-const GAME_W    = SCREEN_W - 32;
-const GAME_H    = Math.round(SCREEN_H * 0.54); // taller — no control bar
-const TOTAL_H   = GAME_H;
-
 const NUM_CHOICES = 4;
-
-// Scale game objects relative to screen width so they fit on any device
-const TARGET_SIZE = Math.round(Math.min(GAME_W / NUM_CHOICES * 0.72, 80));
-const SHIP_SIZE   = Math.round(TARGET_SIZE * 0.62);
-
-const TARGET_TOP        = Math.round(GAME_H * 0.05);
-const SHIP_BOTTOM_PX    = Math.round(GAME_H * 0.09);   // from container bottom
-const SHIP_CENTER_BOT   = SHIP_BOTTOM_PX + SHIP_SIZE / 2;
-const TARGET_BOT_FROM_BOT = TOTAL_H - TARGET_TOP - TARGET_SIZE;
-const MAX_LASER_H       = TARGET_BOT_FROM_BOT - SHIP_CENTER_BOT - 6;
-
 const COLORS = ['#7c3aed', '#0891b2', '#b45309', '#be185d'];
 
 const STARS = Array.from({ length: 28 }, (_, i) => ({
@@ -35,7 +18,7 @@ const STARS = Array.from({ length: 28 }, (_, i) => ({
   opacity: 0.35 + (i % 4) * 0.15,
 }));
 
-function buildChoices(correctAnswer) {
+function buildChoices(correctAnswer, gameW) {
   const set = new Set([correctAnswer]);
   let tries = 0;
   while (set.size < NUM_CHOICES && tries < 60) {
@@ -52,7 +35,7 @@ function buildChoices(correctAnswer) {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
-  const slot = GAME_W / NUM_CHOICES;
+  const slot = gameW / NUM_CHOICES;
   return arr.map((num, i) => ({
     num,
     isCorrect: num === correctAnswer,
@@ -61,12 +44,25 @@ function buildChoices(correctAnswer) {
 }
 
 export default function SpaceshipGame({ question, onCorrect, onWrong }) {
-  const [choices, setChoices] = useState(() => buildChoices(question.answer));
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const gameW = screenW - 32;
+  const gameH = Math.round(screenH * 0.54);
+
+  // Scale game objects relative to screen width so they fit on any device
+  const targetSize     = Math.round(Math.min(gameW / NUM_CHOICES * 0.72, 80));
+  const shipSize       = Math.round(targetSize * 0.62);
+  const targetTop      = Math.round(gameH * 0.05);
+  const shipBottomPx   = Math.round(gameH * 0.09);
+  const shipCenterBot  = shipBottomPx + shipSize / 2;
+  const targetBotFromBot = gameH - targetTop - targetSize;
+  const maxLaserH      = targetBotFromBot - shipCenterBot - 6;
+
+  const [choices, setChoices] = useState(() => buildChoices(question.answer, gameW));
   const [phase,   setPhase]   = useState('aim'); // 'aim' | 'moving' | 'fire' | 'hit'
   const [hitIdx,  setHitIdx]  = useState(null);
 
-  const shipXAnim  = useRef(new Animated.Value(GAME_W / 2)).current;
-  const shipXRef   = useRef(GAME_W / 2);
+  const shipXAnim  = useRef(new Animated.Value(gameW / 2)).current;
+  const shipXRef   = useRef(gameW / 2);
   const laserH     = useRef(new Animated.Value(0)).current;
   const thrustAnim = useRef(new Animated.Value(1)).current;
   const bobAnims   = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
@@ -93,9 +89,9 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
   }, []);
 
   useEffect(() => {
-    setChoices(buildChoices(question.answer));
-    shipXAnim.setValue(GAME_W / 2);
-    shipXRef.current = GAME_W / 2;
+    setChoices(buildChoices(question.answer, gameW));
+    shipXAnim.setValue(gameW / 2);
+    shipXRef.current = gameW / 2;
     phaseRef.current = 'aim';
     setPhase('aim');
     setHitIdx(null);
@@ -157,20 +153,20 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
   const laserLeft = Animated.subtract(shipXAnim, 3);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { width: gameW, height: gameH }]}>
       {/* Starfield */}
-      {STARS.map((s, i) => (
+      {STARS.map((star, i) => (
         <View
           key={i}
           style={{
             position:        'absolute',
-            left:            s.left * GAME_W,
-            top:             s.top  * GAME_H,
-            width:           s.size,
-            height:          s.size,
-            borderRadius:    s.size,
+            left:            star.left * gameW,
+            top:             star.top  * gameH,
+            width:           star.size,
+            height:          star.size,
+            borderRadius:    star.size,
             backgroundColor: '#fff',
-            opacity:         s.opacity,
+            opacity:         star.opacity,
           }}
         />
       ))}
@@ -184,16 +180,19 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
           disabled={phase !== 'aim'}
           style={{
             position: 'absolute',
-            left:     c.cx - TARGET_SIZE / 2,
-            top:      TARGET_TOP,
-            width:    TARGET_SIZE,
-            height:   TARGET_SIZE,
+            left:     c.cx - targetSize / 2,
+            top:      targetTop,
+            width:    targetSize,
+            height:   targetSize,
           }}
         >
           <Animated.View
             style={[
               styles.asteroid,
               {
+                width:           targetSize,
+                height:          targetSize,
+                borderRadius:    targetSize / 2,
                 backgroundColor: COLORS[i],
                 transform:       [{ translateY: bobAnims[i] }],
               },
@@ -216,10 +215,10 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
             styles.laser,
             {
               left:   laserLeft,
-              bottom: SHIP_CENTER_BOT,
+              bottom: shipCenterBot,
               height: laserH.interpolate({
                 inputRange:  [0, 1],
-                outputRange: [0, MAX_LASER_H],
+                outputRange: [0, maxLaserH],
               }),
             },
           ]}
@@ -231,8 +230,10 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
         style={[
           styles.ship,
           {
-            left:      Animated.subtract(shipXAnim, SHIP_SIZE / 2),
-            bottom:    SHIP_BOTTOM_PX,
+            width:     shipSize,
+            height:    shipSize,
+            left:      Animated.subtract(shipXAnim, shipSize / 2),
+            bottom:    shipBottomPx,
             transform: [{ scale: thrustAnim }],
           },
         ]}
@@ -244,7 +245,7 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
       <Animated.View
         style={[
           styles.engineGlow,
-          { left: Animated.subtract(shipXAnim, 8), bottom: SHIP_BOTTOM_PX - 6 },
+          { left: Animated.subtract(shipXAnim, 8), bottom: shipBottomPx - 6 },
         ]}
       />
 
@@ -260,8 +261,6 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
 
 const styles = StyleSheet.create({
   container: {
-    width:           GAME_W,
-    height:          TOTAL_H,
     borderRadius:    20,
     overflow:        'hidden',
     backgroundColor: '#06061a',
@@ -270,9 +269,6 @@ const styles = StyleSheet.create({
     marginVertical:  8,
   },
   asteroid: {
-    width:          TARGET_SIZE,
-    height:         TARGET_SIZE,
-    borderRadius:   TARGET_SIZE / 2,
     alignItems:     'center',
     justifyContent: 'center',
     borderWidth:    2,
@@ -317,8 +313,6 @@ const styles = StyleSheet.create({
   },
   ship: {
     position:       'absolute',
-    width:          SHIP_SIZE,
-    height:         SHIP_SIZE,
     alignItems:     'center',
     justifyContent: 'center',
   },
