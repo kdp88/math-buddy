@@ -106,7 +106,7 @@ function makeProps(overrides = {}) {
 describe('<SpaceshipGame />', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => {
-    jest.runOnlyPendingTimers();
+    act(() => jest.runOnlyPendingTimers());
     jest.useRealTimers();
     jest.clearAllMocks();
   });
