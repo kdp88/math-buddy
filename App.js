@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { submitScoreRemote, fetchLeaderboard } from './services/scoresApi';
 import ClassicGame   from './ClassicGame';
 import SpaceshipGame from './SpaceshipGame';
 import HauntedHouse  from './HauntedHouse';
@@ -72,6 +73,9 @@ export default function App() {
     AsyncStorage.getItem(HS_KEY).then(raw => {
       if (raw) setHighScores(JSON.parse(raw));
     });
+    fetchLeaderboard().then(remote => {
+      if (remote) setHighScores(prev => ({ ...prev, ...remote }));
+    }).catch(() => {});
   }, []);
 
   function saveHighScore(name, newScore) {
@@ -80,6 +84,7 @@ export default function App() {
       if (newScore <= (prev[name] ?? 0)) return prev;
       const updated = { ...prev, [name]: newScore };
       AsyncStorage.setItem(HS_KEY, JSON.stringify(updated));
+      submitScoreRemote(name, newScore).catch(() => {}); // background, non-blocking
       return updated;
     });
   }

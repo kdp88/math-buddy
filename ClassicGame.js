@@ -52,7 +52,7 @@ function CandyPiece({ emoji, faded }) {
   }
 
   return (
-    <TouchableOpacity onPress={handlePress} activeOpacity={0.9}>
+    <TouchableOpacity testID={`classic-candy-${emoji}`} onPress={handlePress} activeOpacity={0.9} accessible={true} accessibilityRole="button">
       <Animated.Text
         style={[
           styles.candy,
@@ -72,14 +72,14 @@ function CandyDisplay({ question }) {
 
   if (op === "+") {
     return (
-      <View style={styles.candyDisplay}>
-        <View style={styles.candyGroup}>
+      <View testID="classic-candy-display" style={styles.candyDisplay}>
+        <View testID="classic-candy-group-a" style={styles.candyGroup}>
           {Array.from({ length: a }).map((_, i) => (
             <CandyPiece key={i} emoji={candyA} />
           ))}
         </View>
-        <Text style={styles.candyOp}>+</Text>
-        <View style={styles.candyGroup}>
+        <Text testID="classic-candy-op" style={styles.candyOp}>+</Text>
+        <View testID="classic-candy-group-b" style={styles.candyGroup}>
           {Array.from({ length: b }).map((_, i) => (
             <CandyPiece key={i} emoji={candyB} />
           ))}
@@ -89,8 +89,8 @@ function CandyDisplay({ question }) {
   }
 
   return (
-    <View style={styles.candyDisplay}>
-      <View style={styles.candyGroup}>
+    <View testID="classic-candy-display" style={styles.candyDisplay}>
+      <View testID="classic-candy-group-a" style={styles.candyGroup}>
         {Array.from({ length: a }).map((_, i) => (
           <CandyPiece key={i} emoji={candyA} faded={i >= a - b} />
         ))}
@@ -102,12 +102,16 @@ function CandyDisplay({ question }) {
 function NumberPad({ onPress, onDelete }) {
   const keys = [1, 2, 3, 4, 5, 6, 7, 8, 9, null, 0, "del"];
   return (
-    <View style={styles.pad}>
+    <View testID="classic-number-pad" style={styles.pad}>
       {keys.map((key, i) => {
         if (key === null) return <View key={i} style={styles.padEmpty} />;
         return (
           <TouchableOpacity
             key={i}
+            testID={key === "del" ? "classic-key-del" : `classic-key-${key}`}
+            accessibilityLabel={key === "del" ? "Delete" : String(key)}
+            accessibilityRole="button"
+            accessible={true}
             style={styles.padKey}
             onPress={() => (key === "del" ? onDelete() : onPress(String(key)))}
             activeOpacity={0.7}
@@ -181,26 +185,31 @@ export default function ClassicGame({ question, onCorrect, onWrong }) {
   }
 
   return (
-    <View style={styles.container}>
+    <View testID="classic-container" style={styles.container}>
       {(question.op === "+" || question.op === "-") && (
         <CandyDisplay question={question} />
       )}
 
       <Animated.View
+        testID="classic-answer-box"
         style={[styles.answerBox, { transform: [{ translateX: shakeAnim }] }]}
       >
-        <Text style={styles.answerText}>{input || " "}</Text>
+        <Text testID="classic-answer-text" style={styles.answerText}>{input || " "}</Text>
       </Animated.View>
 
       <NumberPad onPress={handleNumberPress} onDelete={handleDelete} />
 
       <TouchableOpacity
+        testID="classic-check-btn"
+        accessibilityLabel="Check Answer"
+        accessibilityRole="button"
+        accessible={true}
         style={[styles.checkBtn, input === "" && styles.checkBtnDisabled]}
         onPress={handleCheck}
         activeOpacity={0.8}
         disabled={input === "" || answered}
       >
-        <Text style={styles.checkBtnText}>Check Answer</Text>
+        <Text testID="classic-check-btn-text" style={styles.checkBtnText}>Check Answer</Text>
       </TouchableOpacity>
     </View>
   );

@@ -13,29 +13,29 @@ export default function HighScoreModal({ visible, onClose, highScores }) {
   const sorted = Object.entries(highScores).sort(([, a], [, b]) => b - a);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={styles.sheet}>
-          <Text style={styles.title}>🏆 High Scores</Text>
+    <Modal testID="high-score-modal" visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View testID="high-score-overlay" style={styles.overlay}>
+        <View testID="high-score-sheet" style={styles.sheet}>
+          <Text testID="high-score-title" style={styles.title}>🏆 High Scores</Text>
 
           {sorted.length === 0 ? (
-            <Text style={styles.empty}>No scores yet — start playing!</Text>
+            <Text testID="high-score-empty" style={styles.empty}>No scores yet — start playing!</Text>
           ) : (
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.list}>
+            <ScrollView testID="high-score-list" showsVerticalScrollIndicator={false} style={styles.list}>
               {sorted.map(([name, score], i) => (
-                <View key={name} style={[styles.row, i === 0 && styles.rowFirst]}>
-                  <Text style={styles.medal}>{MEDALS[i] ?? `${i + 1}.`}</Text>
-                  <Text style={styles.name} numberOfLines={1}>{name || 'Anonymous'}</Text>
-                  <View style={styles.scoreBadge}>
-                    <Text style={styles.scoreText}>⭐ {score}</Text>
+                <View key={name} testID={`high-score-row-${i}`} style={[styles.row, i === 0 && styles.rowFirst]}>
+                  <Text testID={`high-score-medal-${i}`} style={styles.medal}>{MEDALS[i] ?? `${i + 1}.`}</Text>
+                  <Text testID={`high-score-name-${i}`} style={styles.name} numberOfLines={1}>{name || 'Anonymous'}</Text>
+                  <View testID={`high-score-badge-${i}`} style={styles.scoreBadge}>
+                    <Text testID={`high-score-score-${i}`} style={styles.scoreText}>⭐ {score}</Text>
                   </View>
                 </View>
               ))}
             </ScrollView>
           )}
 
-          <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.85}>
-            <Text style={styles.closeBtnTxt}>Close</Text>
+          <TouchableOpacity testID="high-score-close-btn" style={styles.closeBtn} onPress={onClose} activeOpacity={0.85}>
+            <Text testID="high-score-close-btn-txt" style={styles.closeBtnTxt}>Close</Text>
           </TouchableOpacity>
         </View>
       </View>

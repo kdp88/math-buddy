@@ -446,7 +446,7 @@ export default function HauntedHouse({ question, onCorrect, onWrong }) {
   }
 
   return (
-    <View style={[styles.container, { width: GAME_W, height: GAME_H }]}>
+    <View testID="haunted-house-container" style={[styles.container, { width: GAME_W, height: GAME_H }]}>
       <GameLoader color="#c084fc" background="#1e0a3c">
         <Canvas
           camera={{ position: [0, 0.2, 4.5], fov: 72 }}
@@ -464,7 +464,7 @@ export default function HauntedHouse({ question, onCorrect, onWrong }) {
         </Canvas>
 
         {/* RN overlay: number labels — hidden until 3D scene has mounted */}
-        <View style={[StyleSheet.absoluteFill, { opacity: canvasReady ? 1 : 0 }]} pointerEvents="none">
+        <View testID="haunted-house-labels-overlay" style={[StyleSheet.absoluteFill, { opacity: canvasReady ? 1 : 0 }]} pointerEvents="none">
           {ghosts.map((ghost, i) => {
             const isWrong   = hitResults[i] === 'wrong';
             const isCorrect = hitResults[i] === 'correct';
@@ -472,12 +472,13 @@ export default function HauntedHouse({ question, onCorrect, onWrong }) {
             return (
               <Animated.View
                 key={i}
+                testID={`haunted-house-ghost-label-${ghost.num}`}
                 style={[
                   styles.label,
                   { left: labelAnims[i].x, top: labelAnims[i].y },
                 ]}
               >
-                <Text style={[styles.labelText, { color }]}>{ghost.num}</Text>
+                <Text testID={`haunted-house-ghost-num-${ghost.num}`} style={[styles.labelText, { color }]}>{ghost.num}</Text>
               </Animated.View>
             );
           })}

@@ -527,4 +527,139 @@ if (retryCount > MAX_RETRIES) { }
 setTimeout(callback, DEBOUNCE_DELAY_MS)
 ```
 
+## UI Test IDs
+
+Every interactive or meaningful UI element **must** have a `testID` prop (React Native) or `data-testid` attribute (web) to support E2E testing.
+
+### Rules
+
+- Add `testID` to every `View`, `TouchableOpacity`, `Pressable`, `TextInput`, `Text` that a test might need to find or interact with
+- Use `kebab-case` with a component-scoped prefix so IDs are unique and searchable
+- IDs should describe what the element **is**, not what it looks like
+
+### Naming Convention
+
+```
+<screen-or-component>-<element-description>
+```
+
+### Examples (React Native)
+
+```jsx
+// ✅ GOOD: Descriptive, prefixed testIDs
+<View testID="settings-modal">
+  <TouchableOpacity testID="settings-mode-spaceship" onPress={...}>
+    <Text testID="settings-mode-spaceship-label">Spaceship</Text>
+  </TouchableOpacity>
+  <TouchableOpacity testID="settings-lets-play-btn" onPress={...}>
+    <Text>Let's Play!</Text>
+  </TouchableOpacity>
+</View>
+
+<TextInput testID="classic-answer-input" ... />
+<TouchableOpacity testID="classic-submit-btn" onPress={...} />
+
+// ❌ BAD: No testID, or vague
+<TouchableOpacity onPress={...}>
+<View testID="btn">
+<TextInput testID="input1" />
+```
+
+### Dynamic lists
+
+For repeated elements (e.g. answer options, asteroids), include the value or index:
+
+```jsx
+// ✅ GOOD
+targets.map(t => (
+  <TouchableOpacity testID={`cockpit-target-${t.num}`} key={t.id} />
+))
+```
+
+## React Native / Tablet Touch (E2E)
+
+Extra rules for making touch-based React Native UIs reliably testable with Detox or Maestro.
+
+### 1. Accessibility props on every tappable element
+
+Custom touch zones (e.g. responder-based areas) are invisible to test runners unless marked accessible.
+
+```jsx
+// ✅ GOOD
+<View
+  testID="cockpit-tap-zone"
+  accessible={true}
+  accessibilityLabel="Tap to fire"
+  accessibilityRole="button"
+  onStartShouldSetResponder={() => true}
+  onResponderGrant={handleTap}
+/>
+
+// ❌ BAD: test runner can't find or tap this
+<View
+  onStartShouldSetResponder={() => true}
+  onResponderGrant={handleTap}
+/>
+```
+
+### 2. Minimum touch target size: 48×48dp
+
+Taps on elements smaller than 48×48 fail silently in E2E tests and are unreliable on tablets.
+
+```jsx
+// ✅ GOOD
+<TouchableOpacity
+  testID="maze-cell-3-4"
+  style={{ width: 48, height: 48 }}
+  onPress={handlePress}
+/>
+
+// ❌ BAD: too small, taps miss
+<TouchableOpacity style={{ width: 20, height: 20 }} onPress={handlePress} />
+```
+
+### 3. Set `pointerEvents` explicitly on overlapping Views
+
+Overlapping `Animated.View` elements silently absorb taps unless `pointerEvents` is set.
+
+```jsx
+// ✅ GOOD: decorative overlay doesn't block taps
+<Animated.View pointerEvents="none" style={overlayStyle} />
+
+// ✅ GOOD: tap zone passes through to children
+<View pointerEvents="box-none" testID="game-area">
+  {targets.map(...)}
+</View>
+
+// ❌ BAD: blocks all taps below it
+<Animated.View style={overlayStyle} />
+```
+
+### 4. Every gesture needs a testable tap fallback
+
+Drag/swipe-only interactions can't be reliably triggered in E2E. Every game action must be reachable via a tap on a `testID`-labelled element.
+
+```jsx
+// ✅ GOOD: tap on asteroid triggers ship movement + fire
+<TouchableOpacity testID={`spaceship-asteroid-${num}`} onPress={() => handleTap(num)} />
+
+// ❌ BAD: only reachable via swipe gesture with no testable element
+```
+
+### 5. Disable / speed up animations in test builds
+
+Animations cause flakiness in E2E. Use a flag to disable them during tests.
+
+```jsx
+// In your component
+const REDUCE_MOTION = process.env.E2E === 'true'
+
+Animated.timing(value, {
+  duration: REDUCE_MOTION ? 0 : 400,
+  useNativeDriver: true,
+}).start()
+```
+
+Set `E2E=true` in your Detox/Maestro test environment config.
+
 **Remember**: Code quality is not negotiable. Clear, maintainable code enables rapid development and confident refactoring.

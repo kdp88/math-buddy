@@ -121,17 +121,21 @@ function NumberTarget({ target, onTap, hit, px, py }) {
   const glowColor = NUM_COLORS[target.colorIdx];
 
   return (
-    <Animated.View style={[s.targetWrap, { left: px - 30, top: py - 30, transform: [{ translateX: tx }, { translateY: ty }] }]}>
+    <Animated.View testID={`cockpit-target-wrap-${target.num}`} style={[s.targetWrap, { left: px - 30, top: py - 30, transform: [{ translateX: tx }, { translateY: ty }] }]}>
       {/* Outer glow ring */}
       <View style={[s.targetGlowRing, { borderColor: glowColor + '66' }]} />
       <TouchableOpacity
+        testID={`cockpit-target-${target.num}`}
+        accessibilityLabel={`Target ${target.num}`}
+        accessibilityRole="button"
+        accessible={true}
         onPress={onTap}
         disabled={hit !== 'none'}
         style={[s.targetBtn, { backgroundColor: bg, shadowColor: glowColor }]}
         activeOpacity={0.75}
       >
-        <Text style={s.targetNum}>{target.num}</Text>
-        {hit !== 'none' && <Text style={s.hitIcon}>{isCorrect ? '✓' : '✗'}</Text>}
+        <Text testID={`cockpit-target-num-${target.num}`} style={s.targetNum}>{target.num}</Text>
+        {hit !== 'none' && <Text testID={`cockpit-target-hit-icon-${target.num}`} style={s.hitIcon}>{isCorrect ? '✓' : '✗'}</Text>}
       </TouchableOpacity>
     </Animated.View>
   );
@@ -227,10 +231,10 @@ export default function CockpitGame({ question, onCorrect, onWrong }) {
   }
 
   return (
-    <View style={[s.container, { width: gameW, height: gameH }]}>
+    <View testID="cockpit-container" style={[s.container, { width: gameW, height: gameH }]}>
 
       {/* ══ SPACE WINDOW ══════════════════════════════════════════════════════ */}
-      <View style={[s.spaceWin, { width: gameW, height: winH }]}>
+      <View testID="cockpit-space-window" style={[s.spaceWin, { width: gameW, height: winH }]}>
 
         {/* Scrolling starfield — 3 parallax layers, each doubled for seamless wrap */}
         {[
@@ -289,7 +293,7 @@ export default function CockpitGame({ question, onCorrect, onWrong }) {
       </View>
 
       {/* ══ DASHBOARD ═════════════════════════════════════════════════════════ */}
-      <View style={s.dashboard}>
+      <View testID="cockpit-dashboard" style={s.dashboard}>
         {/* Blue accent glow strip */}
         <View style={s.accentStrip} />
 

@@ -153,7 +153,7 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
   const laserLeft = Animated.subtract(shipXAnim, 3);
 
   return (
-    <View style={[styles.container, { width: gameW, height: gameH }]}>
+    <View testID="spaceship-container" style={[styles.container, { width: gameW, height: gameH }]}>
       {/* Starfield */}
       {STARS.map((star, i) => (
         <View
@@ -175,6 +175,10 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
       {choices.map((c, i) => (
         <TouchableOpacity
           key={i}
+          testID={`spaceship-asteroid-${c.num}`}
+          accessibilityLabel={`Asteroid ${c.num}`}
+          accessibilityRole="button"
+          accessible={true}
           activeOpacity={0.75}
           onPress={() => tapAsteroid(i)}
           disabled={phase !== 'aim'}
@@ -200,7 +204,7 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
               hitIdx === i && !c.isCorrect && styles.hitWrong,
             ]}
           >
-            <Text style={styles.asteroidNum}>{c.num}</Text>
+            <Text testID={`spaceship-asteroid-num-${c.num}`} style={styles.asteroidNum}>{c.num}</Text>
             {phase === 'aim' && (
               <Text style={styles.tapHint}>tap</Text>
             )}
@@ -211,6 +215,7 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
       {/* Laser beam */}
       {(phase === 'fire' || phase === 'hit') && (
         <Animated.View
+          testID="spaceship-laser"
           style={[
             styles.laser,
             {
@@ -227,6 +232,7 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
 
       {/* Spaceship */}
       <Animated.View
+        testID="spaceship-ship"
         style={[
           styles.ship,
           {
@@ -250,8 +256,8 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
       />
 
       {/* Hint label */}
-      <View style={styles.hintBar}>
-        <Text style={styles.hintTxt}>
+      <View testID="spaceship-hint-bar" style={styles.hintBar}>
+        <Text testID="spaceship-hint-text" style={styles.hintTxt}>
           {phase === 'aim' ? '👆 Tap the correct answer' : phase === 'moving' ? '🚀 Locking on…' : '🔥 Firing!'}
         </Text>
       </View>

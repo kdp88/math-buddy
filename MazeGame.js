@@ -410,8 +410,8 @@ export default function MazeGame({ question, onCorrect, onWrong }) {
   if (!maze) return null;
 
   return (
-    <View style={styles.outer}>
-      <View style={styles.canvasWrap}>
+    <View testID="maze-container" style={styles.outer}>
+      <View testID="maze-canvas-wrap" style={styles.canvasWrap}>
         <Canvas
           camera={{ position: [CX, 9, CZ], fov: 52 }}
           style={StyleSheet.absoluteFill}
@@ -430,7 +430,7 @@ export default function MazeGame({ question, onCorrect, onWrong }) {
         </Canvas>
 
         {/* RN overlay: number labels tracking orb screen positions */}
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <View testID="maze-labels-overlay" style={StyleSheet.absoluteFill} pointerEvents="none">
           {numCells.map((n, i) => {
             const isCorrect = hitNumIdx === i && flashRef.current === 'correct';
             const isWrong   = hitNumIdx === i && flashRef.current === 'wrong';
@@ -438,9 +438,10 @@ export default function MazeGame({ question, onCorrect, onWrong }) {
             return (
               <Animated.View
                 key={i}
+                testID={`maze-orb-label-${n.num}`}
                 style={[styles.label, { left: labelAnims[i].x, top: labelAnims[i].y }]}
               >
-                <Text style={[styles.labelText, { color }]}>{n.num}</Text>
+                <Text testID={`maze-orb-num-${n.num}`} style={[styles.labelText, { color }]}>{n.num}</Text>
               </Animated.View>
             );
           })}
