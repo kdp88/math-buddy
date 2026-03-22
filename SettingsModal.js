@@ -51,6 +51,14 @@ const GAME_MODES = [
     color: '#0f766e',
     bg:    '#ccfbf1',
   },
+  {
+    key:   'fishing',
+    icon:  '🎣',
+    label: 'Fishing',
+    desc:  'Cast your line and catch the fish with the right answer',
+    color: '#1e6fa8',
+    bg:    '#e0f2fe',
+  },
 ];
 
 const OPS = [

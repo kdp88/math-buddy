@@ -1,3 +1,10 @@
+// Suppress noisy expo-gl warning from Three.js internal pixelStorei calls
+const _consoleLog = console.log;
+console.log = (...args) => {
+  if (typeof args[0] === 'string' && args[0].includes('pixelStorei')) return;
+  _consoleLog(...args);
+};
+
 import { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
@@ -15,6 +22,7 @@ import SpaceshipGame from './SpaceshipGame';
 import HauntedHouse  from './HauntedHouse';
 import CockpitGame   from './CockpitGame';
 import MazeGame      from './MazeGame';
+import FishingGame   from './FishingGame';
 import SettingsModal from './SettingsModal';
 import HighScoreModal from './HighScoreModal';
 
@@ -196,6 +204,7 @@ export default function App() {
       {settings.mode === 'cockpit'       && <CockpitGame   {...gameProps} />}
       {settings.mode === 'maze'          && <MazeGame      {...gameProps} />}
       {settings.mode === 'haunted-house' && <HauntedHouse  {...gameProps} />}
+      {settings.mode === 'fishing'       && <FishingGame   {...gameProps} />}
     </SafeAreaView>
     </SafeAreaProvider>
   );
