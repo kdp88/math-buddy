@@ -16,6 +16,7 @@ Focus: Quality, security, maintainability
 - [ ] Security (injection, auth, secrets)
 - [ ] Performance
 - [ ] Readability
+- [ ] Responive design for tablet vertical / horizontal
 - [ ] Test coverage
 
 ## Output Format

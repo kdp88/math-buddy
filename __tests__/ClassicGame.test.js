@@ -82,10 +82,10 @@ describe('<ClassicGame /> number pad input', () => {
     fireEvent.press(getByText('⌫'));
   });
 
-  test('input is capped at 3 digits', () => {
+  test('input is capped at 4 digits', () => {
     const { getByText } = render(<ClassicGame {...makeProps()} />);
-    typeDigits(getByText, 1, 2, 3, 4);
-    expect(getByText('123')).toBeTruthy();
+    typeDigits(getByText, 1, 2, 3, 4, 5);
+    expect(getByText('1234')).toBeTruthy();
   });
 });
 

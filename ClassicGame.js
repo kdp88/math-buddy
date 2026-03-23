@@ -5,35 +5,14 @@ import {
   TouchableOpacity,
   Animated,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
 import { CANDY_SETS } from "./candySets";
 
-const { height: SCREEN_H } = Dimensions.get("window");
-
-// Compute key size so the full classic layout fits on screen.
-// Budget: ~180px for header+question+feedback, 78px answerBox, 76px candy,
-//         56px checkBtn, 20px pad margin, 20px pad row gaps (2×10).
-const KEY = Math.min(72, Math.floor((SCREEN_H - 500) / 3));
 const GAP = 10;
 
-const CORRECT_MESSAGES = [
-  "Great job!",
-  "You got it!",
-  "Awesome!",
-  "Way to go!",
-  "Brilliant!",
-  "Superstar!",
-  "Keep it up!",
-];
-const WRONG_MESSAGES = [
-  "Try again!",
-  "Almost!",
-  "Not quite!",
-  "Give it another go!",
-];
 
-function CandyPiece({ emoji, faded }) {
+function CandyPiece({ emoji, faded, size = 28 }) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   function handlePress() {
@@ -52,11 +31,11 @@ function CandyPiece({ emoji, faded }) {
   }
 
   return (
-    <TouchableOpacity testID={`classic-candy-${emoji}`} onPress={handlePress} activeOpacity={0.9} accessible={true} accessibilityRole="button">
+    <TouchableOpacity testID={`classic-candy-${emoji}`} onPress={handlePress} activeOpacity={0.9} accessibilityLabel={emoji} accessibilityRole="button">
       <Animated.Text
         style={[
           styles.candy,
-          { opacity: faded ? 0.25 : 1, transform: [{ scale: scaleAnim }] },
+          { fontSize: size, opacity: faded ? 0.25 : 1, transform: [{ scale: scaleAnim }] },
         ]}
       >
         {emoji}
@@ -65,24 +44,31 @@ function CandyPiece({ emoji, faded }) {
   );
 }
 
-function CandyDisplay({ question }) {
+// Cap candy shown per group — beyond 10 the visual isn't useful
+const MAX_CANDY = 10;
+
+function CandyDisplay({ question, compact }) {
   const { a, b, op } = question;
   const candyA = CANDY_SETS[a % CANDY_SETS.length];
   const candyB = CANDY_SETS[(a + b) % CANDY_SETS.length];
+  const emojiSize  = compact ? 20 : 28;
+  const groupWidth = compact ? 160 : 220;
 
   if (op === "+") {
     return (
       <View testID="classic-candy-display" style={styles.candyDisplay}>
-        <View testID="classic-candy-group-a" style={styles.candyGroup}>
-          {Array.from({ length: a }).map((_, i) => (
-            <CandyPiece key={i} emoji={candyA} />
+        <View testID="classic-candy-group-a" style={[styles.candyGroup, { maxWidth: groupWidth }]}>
+          {Array.from({ length: Math.min(a, MAX_CANDY) }).map((_, i) => (
+            <CandyPiece key={i} emoji={candyA} size={emojiSize} />
           ))}
+          {a > MAX_CANDY && <Text style={[styles.candyOp, { fontSize: emojiSize }]}>+{a - MAX_CANDY}</Text>}
         </View>
-        <Text testID="classic-candy-op" style={styles.candyOp}>+</Text>
-        <View testID="classic-candy-group-b" style={styles.candyGroup}>
-          {Array.from({ length: b }).map((_, i) => (
-            <CandyPiece key={i} emoji={candyB} />
+        <Text testID="classic-candy-op" style={[styles.candyOp, { fontSize: emojiSize + 4 }]}>+</Text>
+        <View testID="classic-candy-group-b" style={[styles.candyGroup, { maxWidth: groupWidth }]}>
+          {Array.from({ length: Math.min(b, MAX_CANDY) }).map((_, i) => (
+            <CandyPiece key={i} emoji={candyB} size={emojiSize} />
           ))}
+          {b > MAX_CANDY && <Text style={[styles.candyOp, { fontSize: emojiSize }]}>+{b - MAX_CANDY}</Text>}
         </View>
       </View>
     );
@@ -90,33 +76,33 @@ function CandyDisplay({ question }) {
 
   return (
     <View testID="classic-candy-display" style={styles.candyDisplay}>
-      <View testID="classic-candy-group-a" style={styles.candyGroup}>
-        {Array.from({ length: a }).map((_, i) => (
-          <CandyPiece key={i} emoji={candyA} faded={i >= a - b} />
+      <View testID="classic-candy-group-a" style={[styles.candyGroup, { maxWidth: groupWidth * 2 }]}>
+        {Array.from({ length: Math.min(a, MAX_CANDY) }).map((_, i) => (
+          <CandyPiece key={i} emoji={candyA} size={emojiSize} faded={i >= Math.min(a, MAX_CANDY) - Math.min(b, a)} />
         ))}
+        {a > MAX_CANDY && <Text style={[styles.candyOp, { fontSize: emojiSize }]}>+{a - MAX_CANDY}</Text>}
       </View>
     </View>
   );
 }
 
-function NumberPad({ onPress, onDelete }) {
+function NumberPad({ onPress, onDelete, keySize }) {
   const keys = [1, 2, 3, 4, 5, 6, 7, 8, 9, null, 0, "del"];
   return (
-    <View testID="classic-number-pad" style={styles.pad}>
+    <View testID="classic-number-pad" style={[styles.pad, { width: keySize * 3 + GAP * 2 }]}>
       {keys.map((key, i) => {
-        if (key === null) return <View key={i} style={styles.padEmpty} />;
+        if (key === null) return <View key={i} style={{ width: keySize, height: keySize }} />;
         return (
           <TouchableOpacity
             key={i}
             testID={key === "del" ? "classic-key-del" : `classic-key-${key}`}
             accessibilityLabel={key === "del" ? "Delete" : String(key)}
             accessibilityRole="button"
-            accessible={true}
-            style={styles.padKey}
+            style={[styles.padKey, { width: keySize, height: keySize }]}
             onPress={() => (key === "del" ? onDelete() : onPress(String(key)))}
             activeOpacity={0.7}
           >
-            <Text style={styles.padKeyText}>{key === "del" ? "⌫" : key}</Text>
+            <Text style={[styles.padKeyText, { fontSize: keySize * 0.4 }]}>{key === "del" ? "⌫" : key}</Text>
           </TouchableOpacity>
         );
       })}
@@ -125,21 +111,26 @@ function NumberPad({ onPress, onDelete }) {
 }
 
 export default function ClassicGame({ question, onCorrect, onWrong }) {
+  const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
+  const landscape = SCREEN_W > SCREEN_H;
+  const KEY = Math.max(48, Math.min(72, Math.floor((SCREEN_H - 500) / 3)));
+  const compact = !landscape && (question.a > 10 || question.b > 10);
+
   const [input, setInput] = useState("");
   const [answered, setAnswered] = useState(false);
 
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
   // Reset when question changes
-  const prevText = useRef(question.text);
-  if (question.text !== prevText.current) {
-    prevText.current = question.text;
+  const prevAnswer = useRef(question.answer);
+  if (question.answer !== prevAnswer.current) {
+    prevAnswer.current = question.answer;
     setInput("");
     setAnswered(false);
   }
 
   function handleNumberPress(num) {
-    if (answered || input.length >= 3) return;
+    if (answered || input.length >= 4) return;
     setInput((prev) => prev + num);
   }
 
@@ -184,26 +175,21 @@ export default function ClassicGame({ question, onCorrect, onWrong }) {
     }
   }
 
-  return (
-    <View testID="classic-container" style={styles.container}>
-      {(question.op === "+" || question.op === "-") && (
-        <CandyDisplay question={question} />
-      )}
+  const showCandy = question.op === "+" || question.op === "-";
 
+  const padAndControls = (
+    <>
       <Animated.View
         testID="classic-answer-box"
         style={[styles.answerBox, { transform: [{ translateX: shakeAnim }] }]}
       >
         <Text testID="classic-answer-text" style={styles.answerText}>{input || " "}</Text>
       </Animated.View>
-
-      <NumberPad onPress={handleNumberPress} onDelete={handleDelete} />
-
+      <NumberPad onPress={handleNumberPress} onDelete={handleDelete} keySize={KEY} />
       <TouchableOpacity
         testID="classic-check-btn"
         accessibilityLabel="Check Answer"
         accessibilityRole="button"
-        accessible={true}
         style={[styles.checkBtn, input === "" && styles.checkBtnDisabled]}
         onPress={handleCheck}
         activeOpacity={0.8}
@@ -211,12 +197,47 @@ export default function ClassicGame({ question, onCorrect, onWrong }) {
       >
         <Text testID="classic-check-btn-text" style={styles.checkBtnText}>Check Answer</Text>
       </TouchableOpacity>
+    </>
+  );
+
+  if (landscape && showCandy) {
+    return (
+      <View testID="classic-container" style={styles.containerLandscape}>
+        <View style={styles.candySide}>
+          <CandyDisplay question={question} compact={false} />
+        </View>
+        <View style={styles.padSide}>
+          {padAndControls}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View testID="classic-container" style={styles.container}>
+      {showCandy && <CandyDisplay question={question} compact={compact} />}
+      {padAndControls}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    alignItems: "center",
+  },
+  containerLandscape: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 24,
+    paddingHorizontal: 16,
+  },
+  candySide: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  padSide: {
     alignItems: "center",
   },
 
@@ -259,14 +280,11 @@ const styles = StyleSheet.create({
   pad: {
     flexDirection: "row",
     flexWrap: "wrap",
-    width: KEY * 3 + GAP * 2,
     gap: GAP,
     justifyContent: "center",
     marginBottom: 16,
   },
   padKey: {
-    width: KEY,
-    height: KEY,
     backgroundColor: "#f0f0f0",
     borderRadius: 14,
     alignItems: "center",
@@ -277,8 +295,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3,
   },
-  padEmpty: { width: KEY, height: KEY },
-  padKeyText: { fontSize: KEY * 0.4, fontWeight: "600", color: "#333" },
+  padKeyText: { fontWeight: "600", color: "#333" },
 
   // Check button
   checkBtn: {

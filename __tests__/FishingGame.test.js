@@ -44,16 +44,25 @@ function buildFish(answer) {
 // ─── tapFish logic (extracted from component, no React state) ─────────────────
 // Mirrors the guard and branch logic in FishingGame's tapFish() function.
 
+// castTarget mirrors FishingGame's setCastTarget state + 1600ms clear
 function makeTapFishEnv(fishArr) {
-  const doneRef   = { current: false };
-  const tappedRef = { current: new Set() };
-  const onCorrect = jest.fn();
-  const onWrong   = jest.fn();
-  const timers    = [];
+  const doneRef      = { current: false };
+  const tappedRef    = { current: new Set() };
+  const castTargetRef = { current: null };
+  const onCorrect    = jest.fn();
+  const onWrong      = jest.fn();
+  const onAnswer     = jest.fn();
+  const onCast       = jest.fn(); // mirrors fishermanRef.current.cast()
+  const timers       = [];
 
   function tapFish(idx) {
     if (doneRef.current || tappedRef.current.has(idx)) return;
     tappedRef.current.add(idx);
+
+    onAnswer(fishArr[idx].num);
+    onCast(idx);
+    castTargetRef.current = { idx };
+    timers.push(setTimeout(() => { castTargetRef.current = null; }, 1600));
 
     if (fishArr[idx].isCorrect) {
       doneRef.current = true;
@@ -68,7 +77,7 @@ function makeTapFishEnv(fishArr) {
 
   function cleanup() { timers.forEach(clearTimeout); }
 
-  return { tapFish, doneRef, tappedRef, onCorrect, onWrong, cleanup };
+  return { tapFish, doneRef, tappedRef, castTargetRef, onCorrect, onWrong, onAnswer, onCast, cleanup };
 }
 
 // ─── 1. buildFish(answer) ─────────────────────────────────────────────────────
@@ -198,7 +207,7 @@ describe('tapFish — correct answer', () => {
   test('tapping a different fish after correct tap is ignored (doneRef)', () => {
     const fish = buildFish(5);
     const correctIdx  = fish.findIndex(f => f.isCorrect);
-    const wrongIdx    = fish.findIndex((f, i) => i !== correctIdx);
+    const wrongIdx    = fish.findIndex((_, i) => i !== correctIdx);
     const env = makeTapFishEnv(fish);
 
     env.tapFish(correctIdx);
@@ -285,7 +294,118 @@ describe('tapFish — wrong answer', () => {
   });
 });
 
-// ─── 3. tapFish — guard conditions ────────────────────────────────────────────
+// ─── 3. tapFish — onAnswer ────────────────────────────────────────────────────
+
+describe('tapFish — onAnswer', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => { jest.runOnlyPendingTimers(); jest.useRealTimers(); });
+
+  test('onAnswer called with correct fish number on correct tap', () => {
+    const fish = buildFish(5);
+    const correctIdx = fish.findIndex(f => f.isCorrect);
+    const env = makeTapFishEnv(fish);
+
+    env.tapFish(correctIdx);
+    expect(env.onAnswer).toHaveBeenCalledTimes(1);
+    expect(env.onAnswer).toHaveBeenCalledWith(5);
+    env.cleanup();
+  });
+
+  test('onAnswer called with tapped fish number on wrong tap', () => {
+    const fish = buildFish(5);
+    const wrongIdx = fish.findIndex(f => !f.isCorrect);
+    const env = makeTapFishEnv(fish);
+
+    env.tapFish(wrongIdx);
+    expect(env.onAnswer).toHaveBeenCalledTimes(1);
+    expect(env.onAnswer).toHaveBeenCalledWith(fish[wrongIdx].num);
+    env.cleanup();
+  });
+
+  test('onAnswer not called when doneRef is pre-set', () => {
+    const fish = buildFish(5);
+    const env = makeTapFishEnv(fish);
+    env.doneRef.current = true;
+
+    fish.forEach((_, i) => env.tapFish(i));
+    expect(env.onAnswer).not.toHaveBeenCalled();
+    env.cleanup();
+  });
+
+  test('onAnswer not called on double-tap', () => {
+    const fish = buildFish(5);
+    const wrongIdx = fish.findIndex(f => !f.isCorrect);
+    const env = makeTapFishEnv(fish);
+
+    env.tapFish(wrongIdx);
+    env.tapFish(wrongIdx); // blocked by tappedRef
+    expect(env.onAnswer).toHaveBeenCalledTimes(1);
+    env.cleanup();
+  });
+});
+
+// ─── 4. tapFish — cast side effects ───────────────────────────────────────────
+
+describe('tapFish — cast side effects', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => { jest.runOnlyPendingTimers(); jest.useRealTimers(); });
+
+  test('cast is triggered on every valid tap', () => {
+    const fish = buildFish(5);
+    const wrongIdx = fish.findIndex(f => !f.isCorrect);
+    const env = makeTapFishEnv(fish);
+
+    env.tapFish(wrongIdx);
+    expect(env.onCast).toHaveBeenCalledTimes(1);
+    expect(env.onCast).toHaveBeenCalledWith(wrongIdx);
+    env.cleanup();
+  });
+
+  test('cast is not triggered when doneRef is pre-set', () => {
+    const fish = buildFish(5);
+    const env = makeTapFishEnv(fish);
+    env.doneRef.current = true;
+
+    fish.forEach((_, i) => env.tapFish(i));
+    expect(env.onCast).not.toHaveBeenCalled();
+    env.cleanup();
+  });
+
+  test('castTarget is set immediately on tap', () => {
+    const fish = buildFish(5);
+    const wrongIdx = fish.findIndex(f => !f.isCorrect);
+    const env = makeTapFishEnv(fish);
+
+    env.tapFish(wrongIdx);
+    expect(env.castTargetRef.current).not.toBeNull();
+    env.cleanup();
+  });
+
+  test('castTarget clears after 1600ms', () => {
+    const fish = buildFish(5);
+    const wrongIdx = fish.findIndex(f => !f.isCorrect);
+    const env = makeTapFishEnv(fish);
+
+    env.tapFish(wrongIdx);
+    expect(env.castTargetRef.current).not.toBeNull();
+    jest.advanceTimersByTime(1600);
+    expect(env.castTargetRef.current).toBeNull();
+    env.cleanup();
+  });
+
+  test('cast not triggered on double-tap', () => {
+    const fish = buildFish(5);
+    const wrongIdx = fish.findIndex(f => !f.isCorrect);
+    const env = makeTapFishEnv(fish);
+
+    env.tapFish(wrongIdx);
+    env.tapFish(wrongIdx);
+    expect(env.onCast).toHaveBeenCalledTimes(1);
+    env.cleanup();
+  });
+});
+
+// ─── 5. tapFish — guard conditions ────────────────────────────────────────────
 
 describe('tapFish — guard conditions', () => {
   beforeEach(() => jest.useFakeTimers());

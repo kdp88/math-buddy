@@ -77,7 +77,7 @@ function Fish({ index, fish, hitResult, onTap, groupRef, posTracker }) {
     if (!groupRef.current) return;
     const t = clock.elapsedTime;
 
-    if (hitResult === 'correct') return; // just glow, stay in water
+    if (hitResult === 'correct' || hitResult === 'wrong') return; // freeze on tap
 
     // Swim across screen
     xRef.current += fish.dir * FISH_SPEEDS[index] * delta * 3;
@@ -154,6 +154,13 @@ const Fisherman = forwardRef(function Fisherman(_, ref) {
     }
     if (castAnims.length > 0) {
       const clip = castAnims[0].clone();
+      // Remove tracks targeting bones absent from this scene to suppress Three.js warnings
+      const nodeNames = new Set();
+      scene.traverse(obj => nodeNames.add(obj.name));
+      clip.tracks = clip.tracks.filter(track => {
+        const boneName = track.name.split('.')[0];
+        return nodeNames.has(boneName);
+      });
       const cast = mixerRef.current.clipAction(clip);
       cast.setLoop(THREE.LoopOnce, 1);
       cast.timeScale = 3.0;
@@ -185,19 +192,22 @@ const Fisherman = forwardRef(function Fisherman(_, ref) {
       pole.add(rod);
 
 
-      // Line hanging from pole tip
+      // Line hanging from pole tip (rod tip is at y=200 in pole space)
+      const LINE_LEN = 140;
+      const LINE_ANGLE = 0.6; // forward tilt in radians
       const line = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.3, 0.3, 140, 4),
+        new THREE.CylinderGeometry(0.3, 0.3, LINE_LEN, 4),
         new THREE.MeshStandardMaterial({ color: '#cccccc', roughness: 0.2 }),
       );
-      line.position.set(0, 165, 30);
-      line.rotation.set(0.6, 0, 0);
+      // Centre of line is half-length below the tip along the line direction
+      line.position.set(0, 400 - (LINE_LEN / 2) * Math.cos(LINE_ANGLE), (LINE_LEN / 2) * Math.sin(LINE_ANGLE));
+      line.rotation.set(LINE_ANGLE, 0, 0);
       noFrustum(line);
       pole.add(line);
 
       // Invisible marker at line tip — world position drives idle bobber
       const tip = new THREE.Object3D();
-      tip.position.set(0, 95, 30 + 140 * Math.sin(0.6) * 0.5); // bottom of line
+      tip.position.set(0, 200 - LINE_LEN * Math.cos(LINE_ANGLE), LINE_LEN * Math.sin(LINE_ANGLE));
       noFrustum(tip);
       pole.add(tip);
       lineTipRef.current = tip;
@@ -319,6 +329,98 @@ function Dock({ wide = false }) {
           <mesh position={[x, -0.9, 0.5]}>
             <cylinderGeometry args={[0.06, 0.08, 1.2, 6]} />
             <meshStandardMaterial color={plankDark} roughness={0.9} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+// ─── Chair + Umbrella ─────────────────────────────────────────────────────────
+
+function Chair({ wide = false }) {
+  const wood = '#478b3c';
+  const dark = '#5c3a1e';
+  const legs = [[-0.22, -0.22], [-0.22, 0.22], [0.22, -0.22], [0.22, 0.22]];
+  return (
+    <group position={[wide ? -2.2 : -1.1, 0.38, wide ? 5.6 : 5.2]} rotation={[0, -Math.PI / 2, 0]}>
+      {/* Seat */}
+      <mesh position={[0, 0, 0]}>
+        <boxGeometry args={[0.55, 0.06, 0.5]} />
+        <meshStandardMaterial color={wood} roughness={0.8} />
+      </mesh>
+      {/* Back */}
+      <mesh position={[0.22, 0.28, 0]} rotation={[0, 0, 0.18]}>
+        <boxGeometry args={[0.06, 0.55, 0.46]} />
+        <meshStandardMaterial color={wood} roughness={0.8} />
+      </mesh>
+      {/* Legs */}
+      {legs.map(([x, z], i) => (
+        <mesh key={i} position={[x, -0.22, z]}>
+          <cylinderGeometry args={[0.03, 0.03, 0.38, 6]} />
+          <meshStandardMaterial color={dark} roughness={0.9} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function Umbrella({ wide = false }) {
+  return (
+    <group position={[wide ? 2.4 : 1.2, 0.55, wide ? 5.0 : 5.2]}>
+      {/* Pole */}
+      <mesh position={[0, 0.85, 0]}>
+        <cylinderGeometry args={[0.025, 0.025, 1.6, 8]} />
+        <meshStandardMaterial color="#aaaaaa" roughness={0.4} metalness={0.5} />
+      </mesh>
+      {/* Canopy */}
+      <mesh position={[0, 1.68, 0]}>
+        <coneGeometry args={[0.75, 0.38, 12, 1, true]} />
+        <meshStandardMaterial color="#e63946" roughness={0.6} />
+      </mesh>
+      {/* Canopy stripes */}
+      {Array.from({ length: 6 }, (_, i) => (
+        <mesh key={i} position={[0, 1.68, 0]} rotation={[0, (i / 6) * Math.PI * 2, 0]}>
+          <coneGeometry args={[0.76, 0.39, 2, 1, true, 0, 0.18]} />
+          <meshStandardMaterial color="#ffffff" roughness={0.6} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// ─── Bait bucket ──────────────────────────────────────────────────────────────
+
+function BaitBucket() {
+  // Small fish bait: [x, z, rotation, scale]
+  const baitFish = [
+    [ 0.04,  0.02, 0.3,  1.0],
+    [-0.06, -0.03, -0.5, 0.85],
+    [ 0.02, -0.08, 1.1,  0.9],
+    [-0.03,  0.07, -0.2, 0.75],
+  ];
+  return (
+    <group position={[1.8, 0.55, 5.0]}>
+      {/* Bucket walls (open top) */}
+      <mesh>
+        <cylinderGeometry args={[0.18, 0.14, 0.32, 12, 1, true]} />
+        <meshStandardMaterial color="#e63946" roughness={0.7} metalness={0.1} side={2} />
+      </mesh>
+      {/* Bucket bottom */}
+      <mesh position={[0, -0.16, 0]}>
+        <cylinderGeometry args={[0.14, 0.14, 0.01, 12]} />
+        <meshStandardMaterial color="#c1121f" roughness={0.7} />
+      </mesh>
+      {/* Small bait fish inside bucket */}
+      {baitFish.map(([x, z, ry, s], i) => (
+        <group key={i} position={[x, 0.14, z]} rotation={[0, ry, 0]} scale={[s, s, s]}>
+          <mesh scale={[1, 0.35, 0.3]}>
+            <sphereGeometry args={[0.08, 8, 6]} />
+            <meshStandardMaterial color="#a8d8ea" roughness={0.6} />
+          </mesh>
+          <mesh position={[-0.09, 0, 0]} rotation={[0, 0, Math.PI / 4]} scale={[0.5, 0.5, 0.2]}>
+            <sphereGeometry args={[0.05, 6, 4]} />
+            <meshStandardMaterial color="#7ec8e3" roughness={0.6} />
           </mesh>
         </group>
       ))}
@@ -451,7 +553,7 @@ function CastBobber({ target, fishermanRef }) {
 // ─── Scene ready signal ───────────────────────────────────────────────────────
 
 function SceneReady({ onReady }) {
-  useEffect(() => { onReady(); }, []);
+  useEffect(() => { onReady(); }, [onReady]);
   return null;
 }
 
@@ -480,12 +582,15 @@ function Scene({ fish, hitResults, fishRefs, fishPositions, labelAnims, onTapFis
       <Sailboat />
       <Water />
       <Dock wide={wide} />
+      <BaitBucket />
+      <Chair wide={wide} />
+      <Umbrella wide={wide} />
       <Fisherman ref={fishermanRef} />
       <CastBobber target={castTarget} fishermanRef={fishermanRef} />
 
       {fish.map((f, i) => (
         <Fish
-          key={i}
+          key={f.num}
           index={i}
           fish={f}
           hitResult={hitResults[i]}
@@ -502,7 +607,7 @@ function Scene({ fish, hitResults, fishRefs, fishPositions, labelAnims, onTapFis
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function FishingGame({ question, onCorrect, onWrong }) {
+export default function FishingGame({ question, onCorrect, onWrong, onAnswer }) {
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
   const GAME_W = SCREEN_W - 32;
   const GAME_H = Math.min(Math.round(SCREEN_H * 0.54), SCREEN_H - 260);
@@ -531,7 +636,7 @@ export default function FishingGame({ question, onCorrect, onWrong }) {
     setCastTarget(null);
     doneRef.current = false;
     tappedRef.current.clear();
-  }, [question.text]);
+  }, [question.answer]);
 
   function tapFish(idx) {
     if (doneRef.current || tappedRef.current.has(idx)) return;
@@ -553,6 +658,7 @@ export default function FishingGame({ question, onCorrect, onWrong }) {
     fishermanRef.current?.cast(fx, fz);
     setCastTarget({ x: sx, z: sz });
     track(setTimeout(() => setCastTarget(null), 1600));
+    onAnswer?.(fish[idx].num);
 
     if (fish[idx].isCorrect) {
       doneRef.current = true;
@@ -586,7 +692,7 @@ export default function FishingGame({ question, onCorrect, onWrong }) {
             fishermanRef={fishermanRef}
             castTarget={castTarget}
             onReady={() => {}}
-            wide={GAME_W > GAME_H}
+            wide={SCREEN_W > SCREEN_H}
           />
         </Canvas>
 
@@ -596,8 +702,10 @@ export default function FishingGame({ question, onCorrect, onWrong }) {
             const isCorrect = hitResults[i] === 'correct';
             return (
               <Animated.View
-                key={i}
+                key={f.num}
                 testID={`fishing-fish-label-${f.num}`}
+                accessibilityLabel={`Fish number ${f.num}${isCorrect ? ', correct' : isWrong ? ', wrong' : ''}`}
+                accessibilityRole="text"
                 style={[styles.label, {
                   transform: [
                     { translateX: labelAnims[i].x },
@@ -605,7 +713,10 @@ export default function FishingGame({ question, onCorrect, onWrong }) {
                   ],
                 }]}
               >
-                <Text style={[styles.labelText, isCorrect && { color: '#86efac' }, isWrong && { color: '#fca5a5' }]}>
+                <Text
+                  testID={`fishing-fish-number-${f.num}${isCorrect ? '-correct' : isWrong ? '-wrong' : ''}`}
+                  style={[styles.labelText, isCorrect && { color: '#86efac' }, isWrong && { color: '#fca5a5' }]}
+                >
                   {f.num}
                 </Text>
               </Animated.View>

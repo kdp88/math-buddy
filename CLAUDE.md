@@ -48,6 +48,14 @@ All non-classic game modes call `onCorrect` / `onWrong` props.
 - CockpitGame added as 4th game mode
 - Two-step settings flow: mode selection first, then ops/difficulty
 
+## Context Files — Always Read These (contexts/)
+
+Every session MUST read all markdown files in `contexts/` at the start. They contain project-specific decisions, research, and review notes that inform all work.
+
+- `contexts/dev.md` — development decisions and patterns
+- `contexts/research.md` — research and technical investigations
+- `contexts/review.md` — ongoing review notes and known issues
+
 ## Skills — Always Use These (.agents/skills/)
 
 Every development session MUST consult the applicable skill(s) in `.agents/skills/` before writing code. Skim the folder and apply the relevant skill for the task at hand.

@@ -43,14 +43,14 @@ async function submitScore(event) {
   try {
     await client.send(new UpdateCommand({
       TableName: TABLE,
-      Key: { userId: userId.trim(), highScore: score },
-      UpdateExpression: "SET playerName = :n, leaderboard = :lb, updatedAt = :t",
+      Key: { userId: userId.trim() },
+      UpdateExpression: "SET playerName = :n, highScore = :s, leaderboard = :lb, updatedAt = :t",
       ConditionExpression: "attribute_not_exists(userId) OR highScore < :s",
       ExpressionAttributeValues: {
         ":n":  name,
+        ":s":  score,
         ":lb": "ALL",
         ":t":  new Date().toISOString(),
-        ":s":  score,
       },
     }));
     console.log(`[submitScore] New best score saved — playerName: ${name}, score: ${score}`);

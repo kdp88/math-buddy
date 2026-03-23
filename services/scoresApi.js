@@ -26,6 +26,7 @@ async function callApi(path, options = {}) {
       signal: controller.signal,
       headers: { 'Content-Type': 'application/json', ...options.headers },
     });
+    if (!res.ok) return null;
     const json = await res.json();
     return json.data ?? null;
   } catch {
@@ -44,7 +45,7 @@ export async function submitScoreRemote(playerName, score) {
 }
 
 export async function fetchLeaderboard(limit = 20) {
-  const data = await callApi(`/math-buddy/scores?limit=${limit}`);
+  const data = await callApi(`/math-buddy/scores?limit=${encodeURIComponent(limit)}`);
   if (!Array.isArray(data)) return null;
   // Convert array to { playerName: highScore } object matching existing highScores state shape
   return Object.fromEntries(data.map(({ playerName, highScore }) => [playerName, highScore]));

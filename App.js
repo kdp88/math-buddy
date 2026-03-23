@@ -1,8 +1,8 @@
 // Suppress noisy expo-gl warning from Three.js internal pixelStorei calls
-const _consoleLog = console.log;
-console.log = (...args) => {
+const _consoleWarn = console.warn;
+console.warn = (...args) => {
   if (typeof args[0] === 'string' && args[0].includes('pixelStorei')) return;
-  _consoleLog(...args);
+  _consoleWarn(...args);
 };
 
 import { useState, useRef, useEffect } from 'react';
@@ -17,6 +17,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { submitScoreRemote, fetchLeaderboard } from './services/scoresApi';
+import { CORRECT_MESSAGES, WRONG_MESSAGES } from './gameMessages';
 import ClassicGame   from './ClassicGame';
 import SpaceshipGame from './SpaceshipGame';
 import HauntedHouse  from './HauntedHouse';
@@ -60,8 +61,6 @@ function generateQuestion(settings = DEFAULT_SETTINGS) {
   return { text: `${a} ÷ ${b}`, answer, a, b, op };
 }
 
-const CORRECT_MESSAGES = ['Great job!', 'You got it!', 'Awesome!', 'Way to go!', 'Brilliant!', 'Superstar!', 'Keep it up!'];
-const WRONG_MESSAGES   = ['Try again!', 'Almost!', 'Not quite!', 'Give it another go!'];
 
 export default function App() {
   const [settings,          setSettings]          = useState(DEFAULT_SETTINGS);
@@ -71,6 +70,7 @@ export default function App() {
   const [score,             setScore]             = useState(0);
   const [streak,            setStreak]            = useState(0);
   const [feedback,          setFeedback]          = useState(null);
+  const [tappedAnswer,      setTappedAnswer]      = useState(null);
   const [message,           setMessage]           = useState('');
   const [highScores,        setHighScores]        = useState({});
 
@@ -101,6 +101,7 @@ export default function App() {
     setQuestion(generateQuestion(nextSettings ?? settings));
     setFeedback(null);
     setMessage('');
+    setTappedAnswer(null);
   }
 
   function handleCorrect() {
@@ -165,10 +166,24 @@ export default function App() {
           </View>
         )}
         <View style={styles.headerButtons}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setHighScoresVisible(true)} activeOpacity={0.8}>
+          <TouchableOpacity
+            testID="btn-high-scores"
+            accessibilityLabel="High scores"
+            accessibilityRole="button"
+            style={styles.iconBtn}
+            onPress={() => setHighScoresVisible(true)}
+            activeOpacity={0.8}
+          >
             <Text style={styles.iconBtnTxt}>🏆</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setSettingsVisible(true)} activeOpacity={0.8}>
+          <TouchableOpacity
+            testID="btn-settings"
+            accessibilityLabel="Settings"
+            accessibilityRole="button"
+            style={styles.iconBtn}
+            onPress={() => setSettingsVisible(true)}
+            activeOpacity={0.8}
+          >
             <Text style={styles.iconBtnTxt}>⚙️</Text>
           </TouchableOpacity>
         </View>
@@ -189,7 +204,7 @@ export default function App() {
       {/* Question */}
       <Animated.View style={[styles.questionBox, { transform: [{ translateX: shakeAnim }, { scale: scaleAnim }] }]}>
         <Text style={styles.questionLabel}>What is</Text>
-        <Text style={styles.questionText}>{question.text} = ?</Text>
+        <Text style={styles.questionText}>{question.text} = {tappedAnswer ?? '?'}</Text>
       </Animated.View>
 
       {/* Feedback */}
@@ -204,7 +219,7 @@ export default function App() {
       {settings.mode === 'cockpit'       && <CockpitGame   {...gameProps} />}
       {settings.mode === 'maze'          && <MazeGame      {...gameProps} />}
       {settings.mode === 'haunted-house' && <HauntedHouse  {...gameProps} />}
-      {settings.mode === 'fishing'       && <FishingGame   {...gameProps} />}
+      {settings.mode === 'fishing'       && <FishingGame   {...gameProps} onAnswer={setTappedAnswer} />}
     </SafeAreaView>
     </SafeAreaProvider>
   );

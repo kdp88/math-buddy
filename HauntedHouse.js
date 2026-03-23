@@ -5,7 +5,12 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
 import * as THREE from 'three';
 import { useGLTF } from '@react-three/drei/native';
 
-const NUM_GHOSTS = 4;
+// Single require so path is never duplicated between preload and useGLTF calls
+const BEAR_RUG_ASSET = require('./assets/models/bear_skin_rug.glb');
+useGLTF.preload(BEAR_RUG_ASSET);
+
+const NUM_GHOSTS   = 4;
+const GHOST_SCALE  = 1.25; // shared by JSX initial scale, reset, and shrink animation
 
 const GHOST_XS      = [-2.2, -0.75, 0.75, 2.2];
 const GHOST_START_Z = [-3.8, -4.4, -4.0, -3.6];
@@ -21,7 +26,7 @@ function buildGhosts(answer) {
     if (v >= 0) set.add(v);
     tries++;
   }
-  for (let i = 1; set.size < NUM_GHOSTS; i++) {
+  for (let i = 1; set.size < NUM_GHOSTS && i < 200; i++) {
     if (!set.has(answer + i))                            set.add(answer + i);
     else if (answer - i >= 0 && !set.has(answer - i))   set.add(answer - i);
   }
@@ -35,34 +40,42 @@ function buildGhosts(answer) {
 
 // ─── Projects ghost 3D positions → 2D screen coords each frame ────────────────
 
-const _vec = new THREE.Vector3();
-
-function LabelProjector({ groupRefs, labelAnims }) {
+function LabelProjector({ groupRefs, labelAnims, labelSize }) {
   const { camera, size } = useThree();
+  // Local ref avoids shared mutable state if multiple instances ever exist
+  const _vec = useRef(new THREE.Vector3()).current;
+  const labelHalf = labelSize / 2;
   useFrame(() => {
     groupRefs.forEach((ref, i) => {
       if (!ref.current) return;
       _vec.copy(ref.current.position);
       _vec.project(camera);
-      // _vec.x/_vec.y are NDC [-1,1]; convert to canvas pixels
-      labelAnims[i].x.setValue((_vec.x  *  0.5 + 0.5) * size.width  - 18);
-      labelAnims[i].y.setValue((-_vec.y *  0.5 + 0.5) * size.height - 18);
+      // NDC [-1,1] → canvas pixels, offset by half label size to centre it.
+      // +12 shifts the number into the ghost's lower body (below the eyes).
+      labelAnims[i].x.setValue((_vec.x  *  0.5 + 0.5) * size.width  - labelHalf);
+      labelAnims[i].y.setValue((-_vec.y *  0.5 + 0.5) * size.height - labelHalf + 12);
     });
   });
   return null;
+}
+
+// ─── Shared flicker animation ──────────────────────────────────────────────────
+
+function useFlicker(ref) {
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    const t = clock.elapsedTime;
+    ref.current.scale.setScalar(
+      0.88 + Math.sin(t * 13) * 0.13 + Math.sin(t * 7.4) * 0.07,
+    );
+  });
 }
 
 // ─── Flickering candle ─────────────────────────────────────────────────────────
 
 function Candle({ position }) {
   const flameRef = useRef();
-  useFrame(({ clock }) => {
-    if (!flameRef.current) return;
-    const t = clock.elapsedTime;
-    flameRef.current.scale.setScalar(
-      0.88 + Math.sin(t * 13) * 0.13 + Math.sin(t * 7.4) * 0.07,
-    );
-  });
+  useFlicker(flameRef);
   return (
     <group position={position}>
       <mesh>
@@ -84,13 +97,7 @@ function Candle({ position }) {
 
 function Torch({ position }) {
   const flameRef = useRef();
-  useFrame(({ clock }) => {
-    if (!flameRef.current) return;
-    const t = clock.elapsedTime;
-    flameRef.current.scale.setScalar(
-      0.88 + Math.sin(t * 13) * 0.13 + Math.sin(t * 7.4) * 0.07,
-    );
-  });
+  useFlicker(flameRef);
   return (
     <group position={position}>
       <mesh>
@@ -116,21 +123,23 @@ function Torch({ position }) {
 
 // ─── Floating ghost ───────────────────────────────────────────────────────────
 
-function FloatingGhost({ index, ghost, hitResult, onTap, groupRef }) {
+function FloatingGhost({ index, hitResult, groupRef, resetKey, xScale }) {
   const bodyRef  = useRef();
   const zRef     = useRef(GHOST_START_Z[index]);
   const phaseRef = useRef(index * 1.3);
 
+  // resetKey changes on every new question — guarantees reset even if ghost.num
+  // is coincidentally the same value as the previous question's ghost at this index.
   useEffect(() => {
     zRef.current = GHOST_START_Z[index];
     if (groupRef.current) {
-      groupRef.current.position.set(GHOST_XS[index], 0, GHOST_START_Z[index]);
-      groupRef.current.scale.setScalar(1);
+      groupRef.current.position.set(GHOST_XS[index] * xScale, 0, GHOST_START_Z[index]);
+      groupRef.current.scale.setScalar(GHOST_SCALE);
     }
     if (bodyRef.current) {
       bodyRef.current.material.opacity = 0.88;
     }
-  }, [ghost.num]);
+  }, [resetKey]);
 
   useFrame(({ clock }, delta) => {
     if (!groupRef.current || !bodyRef.current) return;
@@ -147,7 +156,7 @@ function FloatingGhost({ index, ghost, hitResult, onTap, groupRef }) {
     zRef.current = Math.min(zRef.current + GHOST_SPEEDS[index] * delta, 0.2);
     const sway = Math.sin(t * 0.55 + phaseRef.current * 1.4) * 0.18;
     const bob  = Math.sin(t * 1.5  + phaseRef.current)       * 0.16;
-    groupRef.current.position.set(GHOST_XS[index] + sway, bob, zRef.current);
+    groupRef.current.position.set(GHOST_XS[index] * xScale + sway, bob, zRef.current);
   });
 
   const isWrong   = hitResult === 'wrong';
@@ -157,8 +166,8 @@ function FloatingGhost({ index, ghost, hitResult, onTap, groupRef }) {
   const emissiveI = isCorrect ? 2.5       : isWrong ? 1.2       : 0.55;
 
   return (
-    <group ref={groupRef} position={[GHOST_XS[index], 0, GHOST_START_Z[index]]}>
-      <mesh ref={bodyRef} scale={[1, 1.3, 1]} onClick={onTap}>
+    <group ref={groupRef} position={[GHOST_XS[index] * xScale, 0, GHOST_START_Z[index]]} scale={GHOST_SCALE}>
+      <mesh ref={bodyRef} scale={[1, 1.3, 1]}>
         <sphereGeometry args={[0.38, 20, 20]} />
         <meshStandardMaterial
           color={bodyColor}
@@ -250,6 +259,7 @@ function Bookcase({ position }) {
   const spines   = ['#4a1942', '#1a3a1a', '#1a2a4a', '#3a2a0a', '#3a0a0a', '#0a2a3a'];
   // Overall: 1.2 wide × 3.6 tall × 0.38 deep — nearly floor-to-ceiling
   return (
+    // Rotate 90° around Y so the bookcase faces inward along the left wall (x = -4.25)
     <group position={[x, y, z]} rotation={[0, Math.PI / 2, 0]}>
       {/* Left side */}
       <mesh position={[-0.59, 1.8, 0]}>
@@ -301,19 +311,18 @@ function Bookcase({ position }) {
 }
 
 function BearCarpet({ position }) {
-  const { scene } = useGLTF(require('./assets/models/bear_skin_rug.glb'));
+  const { scene } = useGLTF(BEAR_RUG_ASSET);
   const groupRef = useRef();
 
   useEffect(() => {
     if (!groupRef.current) return;
     const box = new THREE.Box3().setFromObject(groupRef.current);
-    const bottomY = box.min.y;
-    // Shift the inner primitive up so its bottom sits exactly at y=0 of the group
-    groupRef.current.children[0].position.y -= bottomY;
+    // Set absolutely (not -=) so double-invoke in strict mode doesn't compound
+    groupRef.current.children[0].position.y = -box.min.y;
   }, [scene]);
 
   return (
-    <group ref={groupRef} position={position} rotation={[0, 0, 0]} scale={0.015}>
+    <group ref={groupRef} position={position} scale={0.015}>
       <primitive object={scene} />
     </group>
   );
@@ -362,15 +371,9 @@ function Corridor() {
   );
 }
 
-function SceneReady({ onReady }) {
-  useEffect(() => { onReady(); }, []);
-  return null;
-}
-
-function Scene({ ghosts, onTap, hitResults, groupRefs, labelAnims, onReady }) {
+function Scene({ hitResults, groupRefs, labelAnims, resetKey, xScale, labelSize }) {
   return (
     <>
-      <SceneReady onReady={onReady} />
       <color attach="background" args={['#1e0a3c']} />
       <fog attach="fog" args={['#1e0a3c', 9, 16]} />
 
@@ -391,18 +394,19 @@ function Scene({ ghosts, onTap, hitResults, groupRefs, labelAnims, onReady }) {
 
       <Candle position={[3.7, -0.39, -2.0]} />
 
-      {ghosts.map((ghost, i) => (
+      {Array.from({ length: NUM_GHOSTS }, (_, i) => (
         <FloatingGhost
           key={i}
           index={i}
-          ghost={ghost}
           hitResult={hitResults[i]}
-          onTap={() => onTap(i)}
           groupRef={groupRefs[i]}
+          resetKey={resetKey}
+          xScale={xScale}
         />
       ))}
 
-      <LabelProjector groupRefs={groupRefs} labelAnims={labelAnims} />
+      {/* LabelProjector must live inside Canvas — it uses useThree/useFrame which require the R3F context */}
+      <LabelProjector groupRefs={groupRefs} labelAnims={labelAnims} labelSize={labelSize} />
     </>
   );
 }
@@ -411,15 +415,30 @@ function Scene({ ghosts, onTap, hitResults, groupRefs, labelAnims, onReady }) {
 
 export default function HauntedHouse({ question, onCorrect, onWrong }) {
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
+  const wide   = SCREEN_W > SCREEN_H;
   const GAME_W = SCREEN_W - 32;
-  const GAME_H = Math.min(Math.round(SCREEN_H * 0.54), SCREEN_H - 260);
+  const GAME_H = wide
+    ? Math.max(220, Math.round(SCREEN_H * 0.75))
+    : Math.max(180, Math.min(Math.round(SCREEN_H * 0.54), SCREEN_H - 260));
+  // Scale ghost spread by aspect ratio on all screen sizes — not just landscape
+  const xScale    = Math.min(1.8, (GAME_W / GAME_H) * 0.85);
+  const labelSize = Math.round(Math.max(36, Math.min(60, GAME_H * 0.10)));
+  const labelFont = Math.round(Math.max(14, Math.min(26, GAME_H * 0.065)));
 
   const [ghosts,      setGhosts]      = useState(() => buildGhosts(question.answer));
   const [hitResults,  setHitResults]  = useState(['none', 'none', 'none', 'none']);
   const [canvasReady, setCanvasReady] = useState(false);
-  const doneRef = useRef(false);
+  const doneRef   = useRef(false);
+  const frozenRef = useRef(new Set()); // ghost indices currently locked (correct or pending wrong-reset)
+  // Map key: ghost idx (wrong-reset timers) or 'correct'. Overwrites per key — never accumulates stale IDs.
+  const timersRef = useRef(new Map());
+
+  // Clear pending timers on unmount to prevent setState on unmounted tree
+  useEffect(() => () => { timersRef.current.forEach(clearTimeout); }, []);
 
   // One ref per ghost for 3D group; one Animated.ValueXY per ghost for label position
+  // Plain objects { current: null } mirror the useRef shape — safe here since
+  // useRef cannot be called inside another useRef initialiser (rules of hooks).
   const groupRefs  = useRef(Array.from({ length: NUM_GHOSTS }, () => ({ current: null }))).current;
   const labelAnims = useRef(Array.from({ length: NUM_GHOSTS }, () => ({
     x: new Animated.Value(0),
@@ -430,18 +449,29 @@ export default function HauntedHouse({ question, onCorrect, onWrong }) {
     setGhosts(buildGhosts(question.answer));
     setHitResults(['none', 'none', 'none', 'none']);
     doneRef.current = false;
+    frozenRef.current.clear();
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current.clear();
   }, [question.text]);
 
   function tapGhost(idx) {
-    if (doneRef.current || hitResults[idx] !== 'none') return;
+    // Read hitResults via functional updater pattern isn't possible for a guard,
+    // so use doneRef (already a ref) and a frozenRef set to prevent double-taps
+    // within the same render cycle.
+    if (doneRef.current || frozenRef.current.has(idx)) return;
+    frozenRef.current.add(idx);
     if (ghosts[idx].isCorrect) {
       doneRef.current = true;
       setHitResults(h => h.map((v, i) => i === idx ? 'correct' : v));
-      setTimeout(() => onCorrect(), 900);
+      timersRef.current.set('correct', setTimeout(onCorrect, 900));
     } else {
       setHitResults(h => h.map((v, i) => i === idx ? 'wrong' : v));
-      setTimeout(() => setHitResults(h => h.map((v, i) => i === idx ? 'none' : v)), 700);
-      onWrong();
+      // Defer onWrong so visual state (red ghost) renders before parent reacts
+      timersRef.current.set(idx, setTimeout(() => {
+        frozenRef.current.delete(idx);
+        setHitResults(h => h.map((v, i) => i === idx ? 'none' : v));
+      }, 700));
+      setTimeout(onWrong, 0);
     }
   }
 
@@ -449,22 +479,26 @@ export default function HauntedHouse({ question, onCorrect, onWrong }) {
     <View testID="haunted-house-container" style={[styles.container, { width: GAME_W, height: GAME_H }]}>
       <GameLoader color="#c084fc" background="#1e0a3c">
         <Canvas
-          camera={{ position: [0, 0.2, 4.5], fov: 72 }}
+          // fov changes on rotation; R3F merges camera props so labels reproject correctly next frame
+          camera={{ position: [0, 0.2, 4.5], fov: wide ? 65 : 72 }}
           style={StyleSheet.absoluteFill}
           gl={{ antialias: true }}
+          onCreated={() => setCanvasReady(true)}
         >
           <Scene
-            ghosts={ghosts}
-            onTap={tapGhost}
             hitResults={hitResults}
             groupRefs={groupRefs}
             labelAnims={labelAnims}
-            onReady={() => setCanvasReady(true)}
+            resetKey={question.text}
+            xScale={xScale}
+            labelSize={labelSize}
           />
         </Canvas>
 
-        {/* RN overlay: number labels — hidden until 3D scene has mounted */}
-        <View testID="haunted-house-labels-overlay" style={[StyleSheet.absoluteFill, { opacity: canvasReady ? 1 : 0 }]} pointerEvents="none">
+        {/* RN overlay: tappable number labels tracking each ghost's 3D position.
+            Uses the responder system (not TouchableOpacity) for reliable Android
+            tap detection over a Canvas surface. */}
+        <View testID="haunted-house-labels-overlay" style={[StyleSheet.absoluteFill, { opacity: canvasReady ? 1 : 0 }]}>
           {ghosts.map((ghost, i) => {
             const isWrong   = hitResults[i] === 'wrong';
             const isCorrect = hitResults[i] === 'correct';
@@ -472,13 +506,17 @@ export default function HauntedHouse({ question, onCorrect, onWrong }) {
             return (
               <Animated.View
                 key={i}
-                testID={`haunted-house-ghost-label-${ghost.num}`}
+                testID={`haunted-house-ghost-label-${i}`}
+                accessibilityLabel={`Ghost ${ghost.num}`}
+                accessibilityRole="button"
+                onStartShouldSetResponder={() => true}
+                onResponderGrant={() => tapGhost(i)}
                 style={[
                   styles.label,
-                  { left: labelAnims[i].x, top: labelAnims[i].y },
+                  { width: labelSize, height: labelSize, left: labelAnims[i].x, top: labelAnims[i].y },
                 ]}
               >
-                <Text testID={`haunted-house-ghost-num-${ghost.num}`} style={[styles.labelText, { color }]}>{ghost.num}</Text>
+                <Text testID={`haunted-house-ghost-num-${i}`} style={[styles.labelText, { color, fontSize: labelFont }]}>{ghost.num}</Text>
               </Animated.View>
             );
           })}
@@ -497,14 +535,11 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   label: {
-    position:  'absolute',
-    width:     36,
-    height:    36,
+    position:       'absolute',
     alignItems:     'center',
     justifyContent: 'center',
   },
   labelText: {
-    fontSize:   18,
     fontWeight: 'bold',
     textShadowColor:  '#000',
     textShadowOffset: { width: 1, height: 1 },
