@@ -8,32 +8,14 @@
 
 import { render, fireEvent, act } from '@testing-library/react-native';
 
-// ─── Inline copy of buildChoices for pure unit testing ────────────────────────
+import { buildAnswerChoices } from '../utils/buildAnswerChoices';
 
-const NUM_CHOICES = 4;
-
+// Wrap with cx positioning for SpaceshipGame-specific pure tests
+const SLOT = 100;
 function buildChoices(correctAnswer) {
-  const set = new Set([correctAnswer]);
-  let tries = 0;
-  while (set.size < NUM_CHOICES && tries < 60) {
-    const val = correctAnswer + ((Math.floor(Math.random() * 8) - 4) || 1);
-    if (val >= 0) set.add(val);
-    tries++;
-  }
-  for (let i = 1; set.size < NUM_CHOICES; i++) {
-    if (!set.has(correctAnswer + i))                              set.add(correctAnswer + i);
-    else if (correctAnswer - i >= 0 && !set.has(correctAnswer - i)) set.add(correctAnswer - i);
-  }
-  const arr = [...set];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  const slot = 100; // fixed width for pure tests
-  return arr.map((num, i) => ({
-    num,
-    isCorrect: num === correctAnswer,
-    cx: slot * i + slot / 2,
+  return buildAnswerChoices(correctAnswer).map((c, i) => ({
+    ...c,
+    cx: SLOT * i + SLOT / 2,
   }));
 }
 
@@ -117,9 +99,8 @@ describe('<SpaceshipGame />', () => {
   });
 
   test('renders 4 asteroid targets', () => {
-    const { UNSAFE_getAllByType } = render(<SpaceshipGame {...makeProps()} />);
-    const { TouchableOpacity } = require('react-native');
-    expect(UNSAFE_getAllByType(TouchableOpacity).length).toBeGreaterThanOrEqual(4);
+    const { getAllByTestId } = render(<SpaceshipGame {...makeProps()} />);
+    expect(getAllByTestId(/^spaceship-asteroid-\d+$/)).toHaveLength(4);
   });
 
   test('tapping the correct asteroid eventually calls onCorrect', () => {
@@ -135,20 +116,14 @@ describe('<SpaceshipGame />', () => {
 
   test('tapping a wrong asteroid eventually calls onWrong', () => {
     const props = makeProps();
-    const { UNSAFE_getAllByType } = render(<SpaceshipGame {...props} />);
-    const { TouchableOpacity, Text } = require('react-native');
-    const wrongBtn = UNSAFE_getAllByType(TouchableOpacity).find(btn => {
-      try {
-        const t = btn.findByType(Text)?.props?.children;
-        return String(t) !== String(QUESTION.answer);
-      } catch { return false; }
-    });
-    if (wrongBtn) {
-      fireEvent.press(wrongBtn);
-      act(() => jest.advanceTimersByTime(2000));
-      expect(props.onWrong).toHaveBeenCalledTimes(1);
-      expect(props.onCorrect).not.toHaveBeenCalled();
-    }
+    const { getAllByTestId } = render(<SpaceshipGame {...props} />);
+    const asteroids = getAllByTestId(/^spaceship-asteroid-\d+$/);
+    const wrongBtn = asteroids.find(btn => btn.props.testID !== `spaceship-asteroid-${QUESTION.answer}`);
+    expect(wrongBtn).toBeTruthy();
+    fireEvent.press(wrongBtn);
+    act(() => jest.advanceTimersByTime(2000));
+    expect(props.onWrong).toHaveBeenCalledTimes(1);
+    expect(props.onCorrect).not.toHaveBeenCalled();
   });
 
   test('re-renders with new targets when question changes', () => {

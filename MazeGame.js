@@ -1,13 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions, Animated } from 'react-native';
+import { View, Text, StyleSheet, Animated, useWindowDimensions } from 'react-native';
 import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
 import * as THREE from 'three';
+import { buildAnswerSet } from './utils/buildAnswerChoices';
 
 const _v = new THREE.Vector3();
-
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const GAME_W = SCREEN_W - 16;
-const GAME_H = Math.min(Math.round(SCREEN_H * 0.60), SCREEN_H - 240);
 
 const COLS   = 7;
 const ROWS   = 7;
@@ -94,18 +91,7 @@ function bfs(cells, fromR, fromC, toR, toC) {
 // ── Number builder ────────────────────────────────────────────────────────────
 
 function buildNumbers(answer) {
-  const set = new Set([answer]);
-  let tries = 0;
-  while (set.size < 4 && tries < 60) {
-    const v = answer + ((Math.floor(Math.random() * 8) - 4) || 1);
-    if (v >= 0) set.add(v);
-    tries++;
-  }
-  for (let i = 1; set.size < 4; i++) {
-    if (!set.has(answer + i))                          set.add(answer + i);
-    else if (answer - i >= 0 && !set.has(answer - i)) set.add(answer - i);
-  }
-  return shuffle([...set]);
+  return shuffle([...buildAnswerSet(answer)]);
 }
 
 // ── 3-D components ────────────────────────────────────────────────────────────
@@ -208,8 +194,6 @@ function LabelProjector({ orbRefs, labelAnims }) {
 
 // Glowing number orb at a dead-end cell
 function NumberOrb({ numCell, flash, groupRef }) {
-  const meshRef  = useRef();
-
   // Flash colour
   const isCorrect = flash === 'correct';
   const isWrong   = flash === 'wrong';
@@ -223,7 +207,7 @@ function NumberOrb({ numCell, flash, groupRef }) {
 
   return (
     <group ref={groupRef} position={[numCell.c + 0.5, 0.32, numCell.r + 0.5]}>
-      <mesh ref={meshRef}>
+      <mesh>
         <sphereGeometry args={[0.33, 16, 16]} />
         <meshStandardMaterial
           color={color}
@@ -312,23 +296,43 @@ function Scene({ maze, numCells, playerPosRef, flashRef, onCellTap, hitNumIdx, o
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function MazeGame({ question, onCorrect, onWrong }) {
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const gameW = screenW - 16;
+  const gameH = Math.min(Math.round(screenH * 0.60), screenH - 240);
+
   const [maze,      setMaze]      = useState(null);
   const [numCells,  setNumCells]  = useState([]);
-  const [hitNumIdx, setHitNumIdx] = useState(null); // index of orb being hit
+  const [hitNumIdx, setHitNumIdx] = useState(null);
 
-  const posRef      = useRef({ r: START_R, c: START_C });
-  const mazeRef     = useRef(null);
-  const numRef      = useRef([]);
-  const flashRef    = useRef(null);
-  const walkingRef  = useRef(false);
+  const posRef         = useRef({ r: START_R, c: START_C });
+  const mazeRef        = useRef(null);
+  const numRef         = useRef([]);
+  const flashRef       = useRef(null);
+  const walkingRef     = useRef(false);
+  const mountedRef     = useRef(true);
+  const walkTimerRef   = useRef(null);
+  const flashTimerRef  = useRef(null);
 
-  const orbRefs    = useRef(Array.from({ length: 4 }, () => ({ current: null }))).current;
-  const labelAnims = useRef(Array.from({ length: 4 }, () => ({
-    x: new Animated.Value(-100),
-    y: new Animated.Value(-100),
-  }))).current;
+  const orbRefsStore = useRef(null);
+  if (!orbRefsStore.current) {
+    orbRefsStore.current = Array.from({ length: 4 }, () => ({ current: null }));
+  }
+  const orbRefs = orbRefsStore.current;
+
+  const labelAnimsStore = useRef(null);
+  if (!labelAnimsStore.current) {
+    labelAnimsStore.current = Array.from({ length: 4 }, () => ({
+      x: new Animated.Value(-100),
+      y: new Animated.Value(-100),
+    }));
+  }
+  const labelAnims = labelAnimsStore.current;
 
   function resetGame() {
+    clearTimeout(walkTimerRef.current);
+    clearTimeout(flashTimerRef.current);
+    walkingRef.current = false;
+
     const cells    = generateMaze();
     const deadEnds = shuffle(findDeadEnds(cells, START_R, START_C));
     const nums     = buildNumbers(question.answer);
@@ -361,14 +365,23 @@ export default function MazeGame({ question, onCorrect, onWrong }) {
     setHitNumIdx(null);
   }
 
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(walkTimerRef.current);
+      clearTimeout(flashTimerRef.current);
+    };
+  }, []);
+
   useEffect(() => { resetGame(); }, [question.text]);
 
   function walkPath(path) {
-    if (!path.length) { walkingRef.current = false; return; }
+    if (!path.length || !mountedRef.current) { walkingRef.current = false; return; }
     if (flashRef.current) { walkingRef.current = false; return; }
 
     const [nr, nc] = path[0];
-    setTimeout(() => {
+    walkTimerRef.current = setTimeout(() => {
+      if (!mountedRef.current) return;
       posRef.current = { r: nr, c: nc };
 
       const hit = numRef.current.findIndex(n => n.r === nr && n.c === nc);
@@ -378,11 +391,14 @@ export default function MazeGame({ question, onCorrect, onWrong }) {
         if (numCell.isCorrect) {
           flashRef.current = 'correct';
           setHitNumIdx(hit);
-          setTimeout(() => onCorrect(), 800);
+          flashTimerRef.current = setTimeout(() => {
+            if (mountedRef.current) onCorrect();
+          }, 800);
         } else {
           flashRef.current = 'wrong';
           setHitNumIdx(hit);
-          setTimeout(() => {
+          flashTimerRef.current = setTimeout(() => {
+            if (!mountedRef.current) return;
             flashRef.current = null;
             setHitNumIdx(null);
             onWrong();
@@ -396,7 +412,7 @@ export default function MazeGame({ question, onCorrect, onWrong }) {
   }
 
   function handleCellTap(r, c) {
-    if (flashRef.current || !mazeRef.current) return;
+    if (walkingRef.current || flashRef.current || !mazeRef.current) return;
     const { r: pr, c: pc } = posRef.current;
     if (r === pr && c === pc) return;
 
@@ -411,7 +427,7 @@ export default function MazeGame({ question, onCorrect, onWrong }) {
 
   return (
     <View testID="maze-container" style={styles.outer}>
-      <View testID="maze-canvas-wrap" style={styles.canvasWrap}>
+      <View testID="maze-canvas-wrap" style={[styles.canvasWrap, { width: gameW, height: gameH }]}>
         <Canvas
           camera={{ position: [CX, 9, CZ], fov: 52 }}
           style={StyleSheet.absoluteFill}
@@ -456,35 +472,8 @@ export default function MazeGame({ question, onCorrect, onWrong }) {
 const styles = StyleSheet.create({
   outer: {
     alignItems: 'center',
-    gap: 0,
-  },
-  hud: {
-    width:             GAME_W,
-    backgroundColor:   '#2d5a27',
-    borderRadius:      12,
-    borderWidth:       4,
-    borderColor:       '#5a3e1b',
-    alignItems:        'center',
-    paddingVertical:   10,
-    marginBottom:      8,
-    shadowColor:       '#000',
-    shadowOpacity:     0.3,
-    shadowRadius:      6,
-    elevation:         4,
-  },
-  hudLabel: {
-    fontSize: 9, color: 'rgba(255,255,255,0.55)', fontWeight: '700',
-    letterSpacing: 3, marginBottom: 2,
-  },
-  hudQ: {
-    fontSize: 28, fontWeight: '800', color: '#fff', letterSpacing: 2, fontFamily: 'monospace',
-  },
-  hudHint: {
-    fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 3, fontStyle: 'italic',
   },
   canvasWrap: {
-    width:        GAME_W,
-    height:       GAME_H,
     borderRadius: 16,
     overflow:     'hidden',
     borderWidth:  1.5,

@@ -105,7 +105,9 @@ export default function App() {
   }
 
   function handleCorrect() {
-    const msg = CORRECT_MESSAGES[Math.floor(Math.random() * CORRECT_MESSAGES.length)];
+    const base = CORRECT_MESSAGES[Math.floor(Math.random() * CORRECT_MESSAGES.length)];
+    const name = settings.playerName.trim();
+    const msg  = name ? `${base.slice(0, -1)}, ${name}!` : base;
     setFeedback('correct');
     setMessage(msg);
     setScore(s => {
@@ -122,7 +124,9 @@ export default function App() {
   }
 
   function handleWrong() {
-    const msg = WRONG_MESSAGES[Math.floor(Math.random() * WRONG_MESSAGES.length)];
+    const base = WRONG_MESSAGES[Math.floor(Math.random() * WRONG_MESSAGES.length)];
+    const name = settings.playerName.trim();
+    const msg  = name ? `${base.slice(0, -1)}, ${name}!` : base;
     setFeedback('wrong');
     setMessage(msg);
     setStreak(0);

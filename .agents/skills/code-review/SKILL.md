@@ -93,6 +93,8 @@ Structured checklist for reviewing changes in this codebase. Work through each s
 - [ ] No abstraction added for a single use case
 - [ ] Variable and function names are clear without needing a comment
 - [ ] No `console.log` debug statements left in React Native components
+- [ ] No logic duplicated across files — if the same algorithm or helper appears in more than one place, extract it to `utils/` and import it
+- [ ] Test files do not contain inline copies of production logic unless a framework constraint (e.g. Three.js/R3F) prevents importing the real module — in that case, note the constraint in a comment
 
 ---
 

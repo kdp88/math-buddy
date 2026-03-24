@@ -9,6 +9,8 @@
  *  4. buildNumbers()  — produces 4 unique non-negative distractor numbers
  */
 
+import { buildAnswerSet } from '../utils/buildAnswerChoices';
+
 // ─── Inline copies of pure helpers (no RN/R3F imports needed) ─────────────────
 
 const COLS = 7;
@@ -78,18 +80,7 @@ function bfs(cells, fromR, fromC, toR, toC) {
 }
 
 function buildNumbers(answer) {
-  const set = new Set([answer]);
-  let tries = 0;
-  while (set.size < 4 && tries < 60) {
-    const v = answer + ((Math.floor(Math.random() * 8) - 4) || 1);
-    if (v >= 0) set.add(v);
-    tries++;
-  }
-  for (let i = 1; set.size < 4; i++) {
-    if (!set.has(answer + i))                          set.add(answer + i);
-    else if (answer - i >= 0 && !set.has(answer - i)) set.add(answer - i);
-  }
-  return shuffle([...set]);
+  return shuffle([...buildAnswerSet(answer)]);
 }
 
 // ─── 1. generateMaze() ────────────────────────────────────────────────────────
@@ -212,13 +203,11 @@ describe('bfs()', () => {
   test('finds path in a real maze (from [0,0] to any dead end)', () => {
     const maze = generateMaze();
     const deadEnds = findDeadEnds(maze, 0, 0);
-    if (deadEnds.length > 0) {
-      const [toR, toC] = deadEnds[0];
-      const path = bfs(maze, 0, 0, toR, toC);
-      expect(path.length).toBeGreaterThan(0);
-      // Last step must be the destination
-      expect(path[path.length - 1]).toEqual([toR, toC]);
-    }
+    expect(deadEnds.length).toBeGreaterThan(0);
+    const [toR, toC] = deadEnds[0];
+    const path = bfs(maze, 0, 0, toR, toC);
+    expect(path.length).toBeGreaterThan(0);
+    expect(path[path.length - 1]).toEqual([toR, toC]);
   });
 
   test('returns [] when destination is unreachable', () => {

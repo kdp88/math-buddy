@@ -16,29 +16,10 @@
 
 import { render, fireEvent, act } from '@testing-library/react-native';
 
-// ─── Re-export the private helper for unit testing ────────────────────────────
-// buildTargets is not exported from CockpitGame, so we inline an identical
-// copy here and keep a separate suite that treats the component as a black box.
+import { buildAnswerChoices } from '../utils/buildAnswerChoices';
 
-function buildTargets(answer) {
-  const set = new Set([answer]);
-  let tries = 0;
-  while (set.size < 4 && tries < 60) {
-    const v = answer + ((Math.floor(Math.random() * 8) - 4) || 1);
-    if (v >= 0) set.add(v);
-    tries++;
-  }
-  for (let i = 1; set.size < 4; i++) {
-    if (!set.has(answer + i))                          set.add(answer + i);
-    else if (answer - i >= 0 && !set.has(answer - i)) set.add(answer - i);
-  }
-  const arr = [...set];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr.map((num, i) => ({ num, isCorrect: num === answer, colorIdx: i }));
-}
+// Alias so existing test suite names stay readable
+const buildTargets = buildAnswerChoices;
 
 // ─── 1. buildTargets() — pure unit tests ──────────────────────────────────────
 
@@ -142,11 +123,8 @@ describe('<CockpitGame />', () => {
   // ── Rendering ───────────────────────────────────────────────────────────────
 
   test('renders exactly 4 number targets', () => {
-    const { UNSAFE_getAllByType } = render(<CockpitGame {...makeProps()} />);
-    const { TouchableOpacity } = require('react-native');
-    const tappables = UNSAFE_getAllByType(TouchableOpacity);
-    // 4 number targets — may also include other tappables in future
-    expect(tappables.length).toBeGreaterThanOrEqual(4);
+    const { getAllByTestId } = render(<CockpitGame {...makeProps()} />);
+    expect(getAllByTestId(/^cockpit-target-\d+$/)).toHaveLength(4);
   });
 
   test('displays the correct answer among the visible numbers', () => {
@@ -185,21 +163,29 @@ describe('<CockpitGame />', () => {
 
   test('calls onWrong immediately when a wrong target is tapped', () => {
     const props = makeProps();
-    const { UNSAFE_getAllByType } = render(<CockpitGame {...props} />);
-    const { TouchableOpacity } = require('react-native');
+    const { getAllByTestId } = render(<CockpitGame {...props} />);
+    const targets = getAllByTestId(/^cockpit-target-\d+$/);
+    const wrongButton = targets.find(btn => btn.props.testID !== `cockpit-target-${QUESTION.answer}`);
+    expect(wrongButton).toBeTruthy();
+    fireEvent.press(wrongButton);
+    expect(props.onWrong).toHaveBeenCalledTimes(1);
+    expect(props.onCorrect).not.toHaveBeenCalled();
+  });
 
-    // Find a TouchableOpacity whose displayed number is NOT the correct answer
-    const allTappables = UNSAFE_getAllByType(TouchableOpacity);
-    const wrongButton = allTappables.find(btn => {
-      const text = btn.findByType(require('react-native').Text)?.props?.children;
-      return String(text) !== String(QUESTION.answer);
-    });
+  // ── Wrong-flash reset ───────────────────────────────────────────────────────
 
-    if (wrongButton) {
-      fireEvent.press(wrongButton);
-      expect(props.onWrong).toHaveBeenCalledTimes(1);
-      expect(props.onCorrect).not.toHaveBeenCalled();
-    }
+  test('wrong target becomes tappable again after flash resets', () => {
+    const props = makeProps();
+    const { getAllByTestId } = render(<CockpitGame {...props} />);
+    const wrongBtn = getAllByTestId(/^cockpit-target-\d+$/)
+      .find(btn => btn.props.testID !== `cockpit-target-${QUESTION.answer}`);
+    expect(wrongBtn).toBeTruthy();
+    fireEvent.press(wrongBtn);
+    fireEvent.press(wrongBtn); // still in flash — should be blocked
+    expect(props.onWrong).toHaveBeenCalledTimes(1);
+    act(() => jest.advanceTimersByTime(750)); // past WRONG_FLASH_MS (700)
+    fireEvent.press(wrongBtn); // now re-enabled
+    expect(props.onWrong).toHaveBeenCalledTimes(2);
   });
 
   // ── Guard: no double-fire ───────────────────────────────────────────────────

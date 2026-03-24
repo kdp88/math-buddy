@@ -3,15 +3,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
 const USER_ID_KEY  = 'mathbuddy_userid';
 
-// Returns existing UUID or generates and stores a new one
-async function getUserId() {
-  let id = await AsyncStorage.getItem(USER_ID_KEY);
+// Returns a stable userId for a given playerName, generating and caching one on first use
+async function getUserId(playerName) {
+  const key = `${USER_ID_KEY}_${playerName}`;
+  let id = await AsyncStorage.getItem(key);
   if (!id) {
     id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
       const r = Math.random() * 16 | 0;
       return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
     });
-    await AsyncStorage.setItem(USER_ID_KEY, id);
+    await AsyncStorage.setItem(key, id);
   }
   return id;
 }
@@ -37,7 +38,7 @@ async function callApi(path, options = {}) {
 }
 
 export async function submitScoreRemote(playerName, score) {
-  const userId = await getUserId();
+  const userId = await getUserId(playerName);
   return callApi('/math-buddy/scores', {
     method: 'POST',
     body: JSON.stringify({ userId, playerName, score }),

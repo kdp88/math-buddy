@@ -7,9 +7,13 @@ import {
   StyleSheet,
   useWindowDimensions,
 } from 'react-native';
+import { buildAnswerChoices } from './utils/buildAnswerChoices';
 
-const NUM_CHOICES = 4;
-const COLORS = ['#7c3aed', '#0891b2', '#b45309', '#be185d'];
+const NUM_CHOICES       = 4;
+const COLORS            = ['#7c3aed', '#0891b2', '#b45309', '#be185d'];
+const HIT_FEEDBACK_MS   = 850;
+const LASER_DURATION_MS = 280;
+const GAME_HEIGHT_RATIO = 0.54;
 
 const STARS = Array.from({ length: 28 }, (_, i) => ({
   left:    ((i * 73  + 17) % 97) / 97,
@@ -19,26 +23,9 @@ const STARS = Array.from({ length: 28 }, (_, i) => ({
 }));
 
 function buildChoices(correctAnswer, gameW) {
-  const set = new Set([correctAnswer]);
-  let tries = 0;
-  while (set.size < NUM_CHOICES && tries < 60) {
-    const val = correctAnswer + ((Math.floor(Math.random() * 8) - 4) || 1);
-    if (val >= 0) set.add(val);
-    tries++;
-  }
-  for (let i = 1; set.size < NUM_CHOICES; i++) {
-    if (!set.has(correctAnswer + i))                         set.add(correctAnswer + i);
-    else if (correctAnswer - i >= 0 && !set.has(correctAnswer - i)) set.add(correctAnswer - i);
-  }
-  const arr = [...set];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
   const slot = gameW / NUM_CHOICES;
-  return arr.map((num, i) => ({
-    num,
-    isCorrect: num === correctAnswer,
+  return buildAnswerChoices(correctAnswer).map((c, i) => ({
+    ...c,
     cx: slot * i + slot / 2,
   }));
 }
@@ -46,7 +33,7 @@ function buildChoices(correctAnswer, gameW) {
 export default function SpaceshipGame({ question, onCorrect, onWrong }) {
   const { width: screenW, height: screenH } = useWindowDimensions();
   const gameW = screenW - 32;
-  const gameH = Math.round(screenH * 0.54);
+  const gameH = Math.round(screenH * GAME_HEIGHT_RATIO);
 
   // Scale game objects relative to screen width so they fit on any device
   const targetSize     = Math.round(Math.min(gameW / NUM_CHOICES * 0.72, 80));
@@ -61,17 +48,27 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
   const [phase,   setPhase]   = useState('aim'); // 'aim' | 'moving' | 'fire' | 'hit'
   const [hitIdx,  setHitIdx]  = useState(null);
 
-  const shipXAnim  = useRef(new Animated.Value(gameW / 2)).current;
-  const shipXRef   = useRef(gameW / 2);
-  const laserH     = useRef(new Animated.Value(0)).current;
-  const thrustAnim = useRef(new Animated.Value(1)).current;
-  const bobAnims   = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
-  const phaseRef   = useRef('aim');
+  const shipXAnim    = useRef(new Animated.Value(gameW / 2)).current;
+  const shipXRef     = useRef(gameW / 2);
+  const laserH       = useRef(new Animated.Value(0)).current;
+  const thrustAnim   = useRef(new Animated.Value(1)).current;
+  const bobAnims     = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
+  const phaseRef     = useRef('aim');
+  const activeAnimRef = useRef(null);
+  const laserLeft    = useRef(Animated.subtract(shipXAnim, 3)).current;
 
   // Keep shipXRef in sync so laser position is accurate
   useEffect(() => {
     const id = shipXAnim.addListener(({ value }) => { shipXRef.current = value; });
     return () => shipXAnim.removeListener(id);
+  }, []);
+
+  // Stop all animations and block callbacks on unmount
+  useEffect(() => {
+    return () => {
+      phaseRef.current = 'unmounted';
+      activeAnimRef.current?.stop();
+    };
   }, []);
 
   // Bobbing asteroids
@@ -106,12 +103,14 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
     const targetCx = choices[idx].cx;
 
     // Glide ship to align
-    Animated.timing(shipXAnim, {
+    const glideAnim = Animated.timing(shipXAnim, {
       toValue:         targetCx,
       duration:        Math.abs(targetCx - shipXRef.current) * 1.2 + 80,
       useNativeDriver: false,
-    }).start(({ finished }) => {
-      if (!finished) return;
+    });
+    activeAnimRef.current = glideAnim;
+    glideAnim.start(({ finished }) => {
+      if (!finished || phaseRef.current === 'unmounted') return;
       fireAt(idx);
     });
   }
@@ -126,31 +125,34 @@ export default function SpaceshipGame({ question, onCorrect, onWrong }) {
       Animated.timing(thrustAnim, { toValue: 1,    duration: 120, useNativeDriver: false }),
     ]).start();
 
-    Animated.timing(laserH, {
+    const laserAnim = Animated.timing(laserH, {
       toValue:         1,
-      duration:        280,
+      duration:        LASER_DURATION_MS,
       useNativeDriver: false,
-    }).start(() => {
+    });
+    activeAnimRef.current = laserAnim;
+    laserAnim.start(({ finished }) => {
+      if (!finished || phaseRef.current === 'unmounted') return;
       setHitIdx(idx);
       phaseRef.current = 'hit';
       setPhase('hit');
 
       if (choices[idx].isCorrect) {
-        setTimeout(() => onCorrect(), 850);
+        setTimeout(() => {
+          if (phaseRef.current !== 'unmounted') onCorrect();
+        }, HIT_FEEDBACK_MS);
       } else {
         setTimeout(() => {
+          if (phaseRef.current === 'unmounted') return;
           setHitIdx(null);
           phaseRef.current = 'aim';
           setPhase('aim');
           laserH.setValue(0);
           onWrong();
-        }, 850);
+        }, HIT_FEEDBACK_MS);
       }
     });
   }
-
-  // Laser left tracks the animated ship position
-  const laserLeft = Animated.subtract(shipXAnim, 3);
 
   return (
     <View testID="spaceship-container" style={[styles.container, { width: gameW, height: gameH }]}>

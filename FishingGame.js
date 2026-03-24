@@ -4,6 +4,7 @@ import GameLoader from './GameLoader';
 import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
 import { useGLTF } from '@react-three/drei/native';
 import * as THREE from 'three';
+import { buildAnswerSet } from './utils/buildAnswerChoices';
 
 const NUM_FISH   = 4;
 const FISH_COLORS  = ['#7c3aed', '#16a34a', '#f97316', '#be185d'];
@@ -15,24 +16,17 @@ const WATER_Y      = 0;                             // world Y of water surface
 
 // ─── Game logic ───────────────────────────────────────────────────────────────
 
-function buildFish(answer) {
-  const set = new Set([answer]);
-  let tries = 0;
-  while (set.size < NUM_FISH && tries < 60) {
-    const v = answer + ((Math.floor(Math.random() * 8) - 4) || 1);
-    if (v >= 0) set.add(v);
-    tries++;
-  }
-  for (let i = 1; set.size < NUM_FISH; i++) {
-    if (!set.has(answer + i))                           set.add(answer + i);
-    else if (answer - i >= 0 && !set.has(answer - i))  set.add(answer - i);
-  }
-  const arr = [...set];
-  for (let i = arr.length - 1; i > 0; i--) {
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+    [a[i], a[j]] = [a[j], a[i]];
   }
-  return arr.map((num, idx) => ({
+  return a;
+}
+
+function buildFish(answer) {
+  return shuffle([...buildAnswerSet(answer)]).map((num, idx) => ({
     num,
     isCorrect: num === answer,
     dir: FISH_START_X[idx] < 0 ? 1 : -1,
@@ -132,11 +126,12 @@ const SAILBOAT_GLB       = require('./assets/models/sailboat.glb');
 const Fisherman = forwardRef(function Fisherman(_, ref) {
   const { scene, animations: idleAnims } = useGLTF(FISHERMAN_IDLE_GLB);
   const { animations: castAnims }        = useGLTF(FISHERMAN_CAST_GLB);
-  const mixerRef   = useRef();
-  const idleRef    = useRef();
-  const castRef    = useRef();
+  const mixerRef     = useRef();
+  const idleRef      = useRef();
+  const castRef      = useRef();
   const poleGroupRef = useRef();
   const lineTipRef   = useRef();
+  const castTimerRef = useRef();
 
   useEffect(() => {
     scene.traverse(obj => {
@@ -217,6 +212,7 @@ const Fisherman = forwardRef(function Fisherman(_, ref) {
     }
 
     return () => {
+      clearTimeout(castTimerRef.current);
       mixerRef.current?.stopAllAction();
       if (poleGroupRef.current) {
         poleGroupRef.current.parent?.remove(poleGroupRef.current);
@@ -244,7 +240,8 @@ const Fisherman = forwardRef(function Fisherman(_, ref) {
       idle.fadeOut(0.1);
       cast.reset().setEffectiveWeight(1).fadeIn(0.05).play();
       const duration = (cast.getClip().duration / cast.timeScale) * 1000;
-      setTimeout(() => {
+      clearTimeout(castTimerRef.current);
+      castTimerRef.current = setTimeout(() => {
         cast.fadeOut(0.2);
         idle.reset().setEffectiveWeight(1).fadeIn(0.2).play();
       }, duration);

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions, Animated, Easing } from 'react-native';
+import { buildAnswerChoices } from './utils/buildAnswerChoices';
 
 // ── Target layout (fraction of window area) ──────────────────────────────────
 const TARGET_SLOTS = [
@@ -40,26 +41,8 @@ const R_BTNS = [
   ['#a855f7','#22c55e','#f97316'],
 ];
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function buildTargets(answer) {
-  const set = new Set([answer]);
-  let tries = 0;
-  while (set.size < 4 && tries < 60) {
-    const v = answer + ((Math.floor(Math.random() * 8) - 4) || 1);
-    if (v >= 0) set.add(v);
-    tries++;
-  }
-  for (let i = 1; set.size < 4; i++) {
-    if (!set.has(answer + i))                          set.add(answer + i);
-    else if (answer - i >= 0 && !set.has(answer - i)) set.add(answer - i);
-  }
-  const arr = [...set];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr.map((num, i) => ({ num, isCorrect: num === answer, colorIdx: i }));
-}
+const CORRECT_FEEDBACK_MS = 900;
+const WRONG_FLASH_MS      = 700;
 
 // ── Blinking button ───────────────────────────────────────────────────────────
 function BlinkButton({ color, square, delay }) {
@@ -168,14 +151,20 @@ export default function CockpitGame({ question, onCorrect, onWrong }) {
   const winH  = Math.round(gameH * 0.60);
   const dashH = gameH - winH;
 
-  const [targets,    setTargets]    = useState(() => buildTargets(question.answer));
+  const [targets,    setTargets]    = useState(() => buildAnswerChoices(question.answer));
   const [hitResults, setHitResults] = useState(['none','none','none','none']);
-  const doneRef = useRef(false);
+  const doneRef        = useRef(false);
+  const mountedRef     = useRef(true);
+  const wrongTimers    = useRef([]);
+  const correctTimerRef = useRef(null);
 
   const farScroll  = useRef(new Animated.Value(0)).current;
   const midScroll  = useRef(new Animated.Value(0)).current;
   const nearScroll = useRef(new Animated.Value(0)).current;
-  const planetXRefs = useRef(PLANET_DEFS.map(() => new Animated.Value(-9999)));
+  const planetXRefs = useRef(null);
+  if (!planetXRefs.current) {
+    planetXRefs.current = PLANET_DEFS.map(() => new Animated.Value(-9999));
+  }
 
   useEffect(() => {
     farScroll.setValue(0);
@@ -212,7 +201,15 @@ export default function CockpitGame({ question, onCorrect, onWrong }) {
   }, [gameW]);
 
   useEffect(() => {
-    setTargets(buildTargets(question.answer));
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(correctTimerRef.current);
+      wrongTimers.current.forEach(t => clearTimeout(t));
+    };
+  }, []);
+
+  useEffect(() => {
+    setTargets(buildAnswerChoices(question.answer));
     setHitResults(['none','none','none','none']);
     doneRef.current = false;
   }, [question.text]);
@@ -222,10 +219,16 @@ export default function CockpitGame({ question, onCorrect, onWrong }) {
     if (targets[idx].isCorrect) {
       doneRef.current = true;
       setHitResults(h => h.map((v, i) => i === idx ? 'correct' : v));
-      setTimeout(() => onCorrect(), 900);
+      correctTimerRef.current = setTimeout(() => {
+        if (mountedRef.current) onCorrect();
+      }, CORRECT_FEEDBACK_MS);
     } else {
       setHitResults(h => h.map((v, i) => i === idx ? 'wrong' : v));
-      setTimeout(() => setHitResults(h => h.map((v, i) => i === idx ? 'none' : v)), 700);
+      const t = setTimeout(() => {
+        if (mountedRef.current) setHitResults(h => h.map((v, i) => i === idx ? 'none' : v));
+        wrongTimers.current = wrongTimers.current.filter(id => id !== t);
+      }, WRONG_FLASH_MS);
+      wrongTimers.current.push(t);
       onWrong();
     }
   }

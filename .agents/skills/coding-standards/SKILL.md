@@ -37,6 +37,17 @@ Universal coding standards applicable across all projects.
 - Share utilities across modules
 - Avoid copy-paste programming
 
+#### Shared utilities in this project
+
+Pure helpers used by more than one game component belong in `utils/`. Current inventory:
+
+| Export | File | Used by |
+|---|---|---|
+| `buildAnswerChoices(answer)` | `utils/buildAnswerChoices.js` | SpaceshipGame, CockpitGame |
+| `buildAnswerSet(answer)` | `utils/buildAnswerChoices.js` | MazeGame, buildAnswerChoices |
+
+**Rule:** before writing a new helper inside a game component, check `utils/` first. If equivalent logic already exists, import it. If you write logic that a second component later needs, move it to `utils/` at that point — not speculatively before.
+
 ### 4. YAGNI (You Aren't Gonna Need It)
 - Don't build features before they're needed
 - Avoid speculative generality
