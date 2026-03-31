@@ -59,6 +59,14 @@ const GAME_MODES = [
     color: '#1e6fa8',
     bg:    '#e0f2fe',
   },
+  {
+    key:   'compare',
+    icon:  '⚖️',
+    label: 'Compare!',
+    desc:  'Is it less than or greater than?',
+    color: '#be185d',
+    bg:    '#fdf2f8',
+  },
 ];
 
 const OPS = [
@@ -74,7 +82,7 @@ const DIFFICULTIES = [
   { key: 'hard',   label: 'Hard',   range: '1 – 20' },
 ];
 
-export default function SettingsModal({ visible, onClose, settings, onSave }) {
+export default function SettingsModal({ visible, onClose, settings, onSave, onShowHighScores }) {
   const insets = useSafeAreaInsets();
   // page: 'mode' | 'options'
   const [page,  setPage]  = useState('mode');
@@ -128,7 +136,12 @@ export default function SettingsModal({ visible, onClose, settings, onSave }) {
           {/* ── PAGE 1: Choose game mode ── */}
           {page === 'mode' && (
             <>
-              <Text style={styles.title}>Who is playing?</Text>
+              <View style={styles.titleRow}>
+                <Text style={styles.title}>Who is playing?</Text>
+                <TouchableOpacity style={styles.hsBtn} onPress={onShowHighScores} activeOpacity={0.8}>
+                  <Text style={styles.hsBtnTxt}>🏆 Scores</Text>
+                </TouchableOpacity>
+              </View>
               <TextInput
                 style={styles.nameInput}
                 placeholder="Enter your name"
@@ -247,12 +260,30 @@ const styles = StyleSheet.create({
     // unused in full-screen mode, kept to avoid missing key errors
     height: 0,
   },
+  titleRow: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    marginBottom:   12,
+  },
   title: {
-    fontSize:     24,
-    fontWeight:   '800',
-    color:        '#222',
-    marginBottom: 12,
-    textAlign:    'center',
+    fontSize:   24,
+    fontWeight: '800',
+    color:      '#222',
+    flex:       1,
+  },
+  hsBtn: {
+    paddingHorizontal: 10,
+    paddingVertical:   6,
+    backgroundColor:   '#fff3cd',
+    borderRadius:      10,
+    borderWidth:       1,
+    borderColor:       '#f59e0b',
+  },
+  hsBtnTxt: {
+    fontSize:   12,
+    fontWeight: '700',
+    color:      '#92400e',
   },
   nameInput: {
     borderWidth:       2,
@@ -280,18 +311,18 @@ const styles = StyleSheet.create({
   modeCard: {
     flexDirection:     'row',
     alignItems:        'center',
-    paddingVertical:   16,
-    paddingHorizontal: 16,
-    borderRadius:      16,
+    paddingVertical:   10,
+    paddingHorizontal: 12,
+    borderRadius:      12,
     borderWidth:       2,
-    marginBottom:      12,
-    gap:               14,
+    marginBottom:      8,
+    gap:               10,
   },
-  modeCardIcon:  { fontSize: 32 },
+  modeCardIcon:  { fontSize: 26 },
   modeCardTxt:   { flex: 1 },
-  modeCardLabel: { fontSize: 17, fontWeight: '800', marginBottom: 2 },
-  modeCardDesc:  { fontSize: 13, color: '#666' },
-  modeCardArrow: { fontSize: 28, fontWeight: '300' },
+  modeCardLabel: { fontSize: 15, fontWeight: '800', marginBottom: 2 },
+  modeCardDesc:  { fontSize: 12, color: '#666' },
+  modeCardArrow: { fontSize: 22, fontWeight: '300' },
 
   // ── Options page (page 2) ──
   optionsHeader: {

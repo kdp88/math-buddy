@@ -6,6 +6,7 @@ import { useGLTF } from '@react-three/drei/native';
 import * as THREE from 'three';
 import { buildAnswerSet } from './utils/buildAnswerChoices';
 
+
 const NUM_FISH   = 4;
 const FISH_COLORS  = ['#7c3aed', '#16a34a', '#f97316', '#be185d'];
 const FISH_DEPTHS  = [-1.2, -1.8, -2.4, -1.5];   // Y positions below water

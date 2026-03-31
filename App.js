@@ -1,10 +1,3 @@
-// Suppress noisy expo-gl warning from Three.js internal pixelStorei calls
-const _consoleWarn = console.warn;
-console.warn = (...args) => {
-  if (typeof args[0] === 'string' && args[0].includes('pixelStorei')) return;
-  _consoleWarn(...args);
-};
-
 import { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
@@ -24,8 +17,10 @@ import HauntedHouse  from './HauntedHouse';
 import CockpitGame   from './CockpitGame';
 import MazeGame      from './MazeGame';
 import FishingGame   from './FishingGame';
-import SettingsModal from './SettingsModal';
-import HighScoreModal from './HighScoreModal';
+import CompareGame   from './CompareGame';
+import SettingsModal  from './SettingsModal';
+import HighScoreModal  from './HighScoreModal';
+import LoadingScreen   from './LoadingScreen';
 
 const DEFAULT_SETTINGS = { ops: ['+', '-'], difficulty: 'medium', mode: 'classic', playerName: '' };
 const HS_KEY = 'mathbuddy_highscores';
@@ -62,11 +57,61 @@ function generateQuestion(settings = DEFAULT_SETTINGS) {
 }
 
 
+function generateComparisonQuestion(settings = DEFAULT_SETTINGS) {
+  const { ops, difficulty } = settings;
+  const max = DIFFICULTY_MAX[difficulty];
+  const mul = DIFFICULTY_MUL[difficulty];
+
+  function makeSide() {
+    if (difficulty === 'easy') {
+      const n = Math.floor(Math.random() * max) + 1;
+      return { text: String(n), val: n };
+    }
+    const op = ops[Math.floor(Math.random() * ops.length)];
+    if (op === '+') {
+      const a = Math.floor(Math.random() * max) + 1;
+      const b = Math.floor(Math.random() * max) + 1;
+      return { text: `${a} + ${b}`, val: a + b };
+    }
+    if (op === '-') {
+      const a = Math.floor(Math.random() * max) + 1;
+      const b = Math.floor(Math.random() * max) + 1;
+      const big = Math.max(a, b), small = Math.min(a, b);
+      return { text: `${big} - ${small}`, val: big - small };
+    }
+    if (op === '×') {
+      const a = Math.floor(Math.random() * mul) + 1;
+      const b = Math.floor(Math.random() * mul) + 1;
+      return { text: `${a} × ${b}`, val: a * b };
+    }
+    const b = Math.floor(Math.random() * mul) + 1;
+    const ans = Math.floor(Math.random() * mul) + 1;
+    return { text: `${b * ans} ÷ ${b}`, val: ans };
+  }
+
+  let left, right;
+  do { left = makeSide(); right = makeSide(); } while (left.val === right.val);
+
+  return {
+    text:      `${left.text} ? ${right.text}`,
+    answer:    left.val > right.val ? '>' : '<',
+    leftText:  left.text,
+    rightText: right.text,
+    leftVal:   left.val,
+    rightVal:  right.val,
+  };
+}
+
+function generateAnyQuestion(s) {
+  return s.mode === 'compare' ? generateComparisonQuestion(s) : generateQuestion(s);
+}
+
 export default function App() {
+  const [isLoading,         setIsLoading]         = useState(true);
   const [settings,          setSettings]          = useState(DEFAULT_SETTINGS);
   const [settingsVisible,   setSettingsVisible]   = useState(true);
   const [highScoresVisible, setHighScoresVisible] = useState(false);
-  const [question,          setQuestion]          = useState(() => generateQuestion(DEFAULT_SETTINGS));
+  const [question,          setQuestion]          = useState(() => generateAnyQuestion(DEFAULT_SETTINGS));
   const [score,             setScore]             = useState(0);
   const [streak,            setStreak]            = useState(0);
   const [feedback,          setFeedback]          = useState(null);
@@ -98,7 +143,7 @@ export default function App() {
   }
 
   function nextQuestion(nextSettings) {
-    setQuestion(generateQuestion(nextSettings ?? settings));
+    setQuestion(generateAnyQuestion(nextSettings ?? settings));
     setFeedback(null);
     setMessage('');
     setTappedAnswer(null);
@@ -153,6 +198,8 @@ export default function App() {
 
   const gameProps = { question, onCorrect: handleCorrect, onWrong: handleWrong };
 
+  if (isLoading) return <LoadingScreen onComplete={() => setIsLoading(false)} />;
+
   return (
     <SafeAreaProvider>
     <SafeAreaView style={[styles.safe, { backgroundColor: bgColor }]}>
@@ -198,6 +245,7 @@ export default function App() {
         onClose={() => setSettingsVisible(false)}
         settings={settings}
         onSave={handleSaveSettings}
+        onShowHighScores={() => setHighScoresVisible(true)}
       />
       <HighScoreModal
         visible={highScoresVisible}
@@ -224,6 +272,7 @@ export default function App() {
       {settings.mode === 'maze'          && <MazeGame      {...gameProps} />}
       {settings.mode === 'haunted-house' && <HauntedHouse  {...gameProps} />}
       {settings.mode === 'fishing'       && <FishingGame   {...gameProps} onAnswer={setTappedAnswer} />}
+      {settings.mode === 'compare'       && <CompareGame   {...gameProps} />}
     </SafeAreaView>
     </SafeAreaProvider>
   );
