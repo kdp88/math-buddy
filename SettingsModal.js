@@ -67,6 +67,14 @@ const GAME_MODES = [
     color: '#be185d',
     bg:    '#fdf2f8',
   },
+  {
+    key:   'place-value',
+    icon:  '🔢',
+    label: 'Place Value',
+    desc:  'Match tens and ones — two ways!',
+    color: '#7c3aed',
+    bg:    '#ede9fe',
+  },
 ];
 
 const OPS = [
@@ -153,7 +161,7 @@ export default function SettingsModal({ visible, onClose, settings, onSave, onSh
                 returnKeyType="done"
               />
               <Text style={styles.sectionTitle}>Choose a Game Mode</Text>
-              <ScrollView showsVerticalScrollIndicator={false}>
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} nestedScrollEnabled>
                 {GAME_MODES.map(m => (
                   <TouchableOpacity
                     key={m.key}

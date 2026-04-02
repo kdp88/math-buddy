@@ -17,7 +17,8 @@ import HauntedHouse  from './HauntedHouse';
 import CockpitGame   from './CockpitGame';
 import MazeGame      from './MazeGame';
 import FishingGame   from './FishingGame';
-import CompareGame   from './CompareGame';
+import CompareGame      from './CompareGame';
+import PlaceValueGame  from './PlaceValueGame';
 import SettingsModal  from './SettingsModal';
 import HighScoreModal  from './HighScoreModal';
 import LoadingScreen   from './LoadingScreen';
@@ -90,11 +91,24 @@ function generateComparisonQuestion(settings = DEFAULT_SETTINGS) {
   }
 
   let left, right;
-  do { left = makeSide(); right = makeSide(); } while (left.val === right.val);
+  // ~25% chance of an equal question: two expressions with the same value
+  // (easy mode uses plain numbers so text may match; that's fine)
+  if (difficulty !== 'easy' && Math.random() < 0.25) {
+    let tries = 0;
+    do {
+      left = makeSide(); right = makeSide(); tries++;
+    } while (left.val !== right.val && tries < 50);
+    if (left.val !== right.val) {
+      // fallback: unequal question
+      do { left = makeSide(); right = makeSide(); } while (left.val === right.val);
+    }
+  } else {
+    do { left = makeSide(); right = makeSide(); } while (left.val === right.val);
+  }
 
   return {
-    text:      `${left.text} ? ${right.text}`,
-    answer:    left.val > right.val ? '>' : '<',
+    text:      `${left.text} = __\u2003\u2003${right.text} = __`,
+    answer:    left.val > right.val ? '>' : left.val < right.val ? '<' : '=',
     leftText:  left.text,
     rightText: right.text,
     leftVal:   left.val,
@@ -102,8 +116,48 @@ function generateComparisonQuestion(settings = DEFAULT_SETTINGS) {
   };
 }
 
+const PV_DIFFICULTY_MAX = { easy: 19, medium: 99, hard: 199 };
+const PV_DIFFICULTY_MIN = 11;
+
+function generatePlaceValueQuestion(settings = DEFAULT_SETTINGS) {
+  const max = PV_DIFFICULTY_MAX[settings.difficulty];
+  const N   = Math.floor(Math.random() * (max - PV_DIFFICULTY_MIN + 1)) + PV_DIFFICULTY_MIN;
+
+  const standardTens = Math.floor(N / 10);
+  const standardOnes = N % 10;
+  const repA = { tens: standardTens, ones: standardOnes };
+
+  const bothCorrect = Math.random() < 0.5;
+  let repB;
+
+  if (bothCorrect) {
+    const t = Math.floor(Math.random() * standardTens); // 0 … standardTens-1
+    repB = { tens: t, ones: N - t * 10 };
+  } else {
+    let wrongN;
+    let tries = 0;
+    do {
+      const delta = (Math.floor(Math.random() * 5) + 1) * (Math.random() < 0.5 ? 1 : -1);
+      wrongN = N + delta;
+      tries++;
+    } while ((wrongN < PV_DIFFICULTY_MIN || wrongN > max + 10) && tries < 20);
+    if (wrongN < PV_DIFFICULTY_MIN) wrongN = N + 1;
+    repB = { tens: Math.floor(wrongN / 10), ones: wrongN % 10 };
+  }
+
+  return {
+    text: `pv:${N}:${Date.now()}`,
+    answer: N,
+    repA,
+    repB,
+    bothCorrect,
+  };
+}
+
 function generateAnyQuestion(s) {
-  return s.mode === 'compare' ? generateComparisonQuestion(s) : generateQuestion(s);
+  if (s.mode === 'compare')     return generateComparisonQuestion(s);
+  if (s.mode === 'place-value') return generatePlaceValueQuestion(s);
+  return generateQuestion(s);
 }
 
 export default function App() {
@@ -255,8 +309,8 @@ export default function App() {
 
       {/* Question */}
       <Animated.View style={[styles.questionBox, { transform: [{ translateX: shakeAnim }, { scale: scaleAnim }] }]}>
-        <Text style={styles.questionLabel}>What is</Text>
-        <Text style={styles.questionText}>{question.text} = {tappedAnswer ?? '?'}</Text>
+        <Text style={styles.questionLabel}>{settings.mode === 'compare' ? 'Compare' : settings.mode === 'place-value' ? 'Place Value' : 'What is'}</Text>
+        <Text style={styles.questionText}>{settings.mode === 'place-value' ? `Find ${question.answer}` : settings.mode === 'compare' ? question.text : `${question.text} = ${tappedAnswer ?? '?'}`}</Text>
       </Animated.View>
 
       {/* Feedback */}
@@ -272,7 +326,8 @@ export default function App() {
       {settings.mode === 'maze'          && <MazeGame      {...gameProps} />}
       {settings.mode === 'haunted-house' && <HauntedHouse  {...gameProps} />}
       {settings.mode === 'fishing'       && <FishingGame   {...gameProps} onAnswer={setTappedAnswer} />}
-      {settings.mode === 'compare'       && <CompareGame   {...gameProps} />}
+      {settings.mode === 'compare'       && <CompareGame      {...gameProps} />}
+      {settings.mode === 'place-value'  && <PlaceValueGame  {...gameProps} />}
     </SafeAreaView>
     </SafeAreaProvider>
   );
